@@ -1,0 +1,37 @@
+{
+  "scan_date": "2026-07-27",
+  "top_n": 3,
+  "ranking": [
+    {
+      "ticker": "ITBEES.NS",
+      "rs": 4.548,
+      "name": "ITBees"
+    },
+    {
+      "ticker": "AUTOBEES.NS",
+      "rs": 4.211,
+      "name": "AutoBees"
+    },
+    {
+      "ticker": "JUNIORBEES.NS",
+      "rs": 1.812,
+      "name": "JuniorBees"
+    }
+  ],
+  "current_holdings": [
+    "AUTOBEES.NS",
+    "ITBEES.NS",
+    "MAFANG.NS"
+  ],
+  "planned_sell": [
+    "MAFANG.NS"
+  ],
+  "planned_buy": [
+    "JUNIORBEES.NS"
+  ],
+  "planned_hold": [
+    "AUTOBEES.NS",
+    "ITBEES.NS"
+  ],
+  "note": "Executes at next Monday's close (or next trading day if Monday is a holiday)."
+}
