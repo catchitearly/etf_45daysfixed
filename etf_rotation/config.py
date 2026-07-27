@@ -42,7 +42,7 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # Strategy parameters
 # ---------------------------------------------------------------------------
 LOOKBACK_DAYS = 45                     # Mansfield RS smoothing window (trading days)
-TOP_N = int(os.environ.get("TOP_N", 5))  # number of ETFs to hold, overridable via env var
+TOP_N = int(os.environ.get("TOP_N", 3))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
 INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000
