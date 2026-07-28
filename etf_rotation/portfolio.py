@@ -1,18 +1,20 @@
 """
-Diff-based portfolio rebalancing.
+Portfolio simulation with two selectable weekly rebalancing modes.
 
-Rule (per user spec):
-  - Every Monday close, compare current holdings to the latest Saturday scan's
-    top-N list.
-  - ETFs that are in BOTH (continuing) are left completely untouched (no
-    forced rebalance -> minimizes churn/costs, weights are allowed to drift).
-  - ETFs held but no longer in top-N are SOLD in full.
-  - ETFs in top-N but not currently held are BOUGHT, using all cash freed by
-    sells (plus any idle cash), split equally across the number of new
-    entrants this week.
-  - Units are whole numbers (NSE ETFs trade in single-unit lots); leftover
-    cash from rounding stays in cash.
-  - Transaction cost (config.TXN_COST_BPS) applied on both buys and sells.
+  "full_liquidate" (current default, config.REBALANCE_MODE):
+      Whenever the top-N SET changes at all (even by one name), sell EVERY
+      current holding and rebuy the new top-N fresh at equal weight. Even
+      names that continue to be in the top-N get sold and rebought. If the
+      top-N set is identical to what's currently held, no trades happen at
+      all that week.
+
+  "diff" (kept as an option):
+      Continuing holdings are left completely untouched; only sell drop-outs
+      and buy new entrants with the freed + idle cash, split equally across
+      new entrants.
+
+Both modes: whole-unit share sizing (NSE ETFs trade in single-unit lots),
+transaction cost (config.TXN_COST_BPS) applied on both buys and sells.
 """
 from dataclasses import dataclass, field
 
@@ -34,54 +36,77 @@ class Portfolio:
                 mv += units * px
         return mv
 
-    def rebalance(self, date, target_tickers: list, prices_on_date: dict):
-        """
-        target_tickers: ordered list of top-N tickers as of the preceding scan.
-        prices_on_date: dict ticker -> close price on the execution (Monday) date.
-        """
+    # ------------------------------------------------------------------
+    def _sell(self, date, ticker, prices_on_date):
+        px = prices_on_date.get(ticker)
+        units = self.holdings.pop(ticker, 0)
+        if px is None or px != px or units == 0:
+            return
+        gross = units * px
+        cost = gross * self.cost_bps
+        proceeds = gross - cost
+        self.cash += proceeds
+        self.trade_log.append({
+            "date": date, "action": "SELL", "ticker": ticker,
+            "units": units, "price": px, "gross": gross,
+            "cost": cost, "cash_after": self.cash,
+        })
+
+    def _buy_equal_weight(self, date, tickers, prices_on_date):
+        buyable = [t for t in tickers if prices_on_date.get(t) == prices_on_date.get(t) and prices_on_date.get(t)]
+        if not buyable:
+            return
+        alloc_each = self.cash / len(buyable)
+        for t in buyable:
+            px = prices_on_date[t]
+            spendable = alloc_each / (1 + self.cost_bps)
+            units = int(spendable // px)
+            if units <= 0:
+                continue
+            gross = units * px
+            cost = gross * self.cost_bps
+            total_spend = gross + cost
+            self.cash -= total_spend
+            self.holdings[t] = self.holdings.get(t, 0) + units
+            self.trade_log.append({
+                "date": date, "action": "BUY", "ticker": t,
+                "units": units, "price": px, "gross": gross,
+                "cost": cost, "cash_after": self.cash,
+            })
+
+    # ------------------------------------------------------------------
+    def rebalance_diff(self, date, target_tickers: list, prices_on_date: dict):
+        """Only trade the diffs; continuing holdings are left untouched."""
         target_set = set(target_tickers)
         held_set = set(self.holdings.keys())
 
         to_sell = held_set - target_set
         to_buy = [t for t in target_tickers if t not in held_set]  # preserve rank order
 
-        # --- sells ---
         for t in to_sell:
-            px = prices_on_date.get(t)
-            units = self.holdings.pop(t, 0)
-            if px is None or px != px or units == 0:
-                continue
-            gross = units * px
-            cost = gross * self.cost_bps
-            proceeds = gross - cost
-            self.cash += proceeds
-            self.trade_log.append({
-                "date": date, "action": "SELL", "ticker": t,
-                "units": units, "price": px, "gross": gross,
-                "cost": cost, "cash_after": self.cash,
-            })
+            self._sell(date, t, prices_on_date)
+        self._buy_equal_weight(date, to_buy, prices_on_date)
 
-        # --- buys ---
-        buyable = [t for t in to_buy if prices_on_date.get(t) == prices_on_date.get(t) and prices_on_date.get(t)]
-        if buyable:
-            alloc_each = self.cash / len(buyable)
-            for t in buyable:
-                px = prices_on_date[t]
-                # reserve for cost: spend so that units*px*(1+cost_bps) <= alloc_each
-                spendable = alloc_each / (1 + self.cost_bps)
-                units = int(spendable // px)
-                if units <= 0:
-                    continue
-                gross = units * px
-                cost = gross * self.cost_bps
-                total_spend = gross + cost
-                self.cash -= total_spend
-                self.holdings[t] = self.holdings.get(t, 0) + units
-                self.trade_log.append({
-                    "date": date, "action": "BUY", "ticker": t,
-                    "units": units, "price": px, "gross": gross,
-                    "cost": cost, "cash_after": self.cash,
-                })
+    def rebalance_full_liquidate(self, date, target_tickers: list, prices_on_date: dict):
+        """Sell everything and rebuy fresh at equal weight, but ONLY if the
+        top-N set actually changed vs. current holdings (no-op otherwise)."""
+        target_set = set(target_tickers)
+        held_set = set(self.holdings.keys())
+        if target_set == held_set:
+            return  # nothing changed this week -> no trades, no cost
+
+        for t in list(self.holdings.keys()):
+            self._sell(date, t, prices_on_date)
+        self._buy_equal_weight(date, target_tickers, prices_on_date)
+
+    def rebalance(self, date, target_tickers: list, prices_on_date: dict, mode: str = None):
+        mode = mode or config.REBALANCE_MODE
+        if mode == "full_liquidate":
+            self.rebalance_full_liquidate(date, target_tickers, prices_on_date)
+        elif mode == "diff":
+            self.rebalance_diff(date, target_tickers, prices_on_date)
+        else:
+            raise ValueError(f"Unknown rebalance mode: {mode!r}")
 
     def snapshot(self):
         return {"cash": self.cash, "holdings": dict(self.holdings)}

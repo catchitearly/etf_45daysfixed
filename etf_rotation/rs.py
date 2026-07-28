@@ -59,6 +59,45 @@ def compute_mansfield_rs(prices: pd.DataFrame, lookback: int = config.LOOKBACK_D
     return rs
 
 
+def compute_momentum_rs(prices: pd.DataFrame, lookback: int = config.LOOKBACK_DAYS) -> pd.DataFrame:
+    """
+    "Momentum" RS style: for ETF i, score = raw N-day return of i minus the
+    average N-day return of all other ETFs (peers), i.e.
+
+        score_i(t) = ret_i(t) - mean_{j != i}( ret_j(t) )
+
+    This is unsmoothed (no moving average of a ratio) so it reacts to the
+    current N-day window immediately, unlike Mansfield RS which requires
+    the ratio to be above its OWN 45-day moving average before it fires.
+    Included for direct, apples-to-apples comparison against Mansfield RS
+    under identical top_n / rebalance / cost rules.
+    """
+    rets = prices / prices.shift(lookback) - 1.0
+    total = rets.sum(axis=1, skipna=True)
+    count = rets.notna().sum(axis=1)
+
+    score = pd.DataFrame(index=prices.index, columns=prices.columns, dtype=float)
+    for col in prices.columns:
+        own = rets[col]
+        others_sum = total - own.fillna(0)
+        others_count = count - own.notna().astype(int)
+        peer_mean = others_sum / others_count.replace(0, np.nan)
+        score[col] = own - peer_mean
+
+    return score
+
+
+def compute_rs(prices: pd.DataFrame, lookback: int = config.LOOKBACK_DAYS,
+                method: str = "mansfield") -> pd.DataFrame:
+    """Dispatcher: method in {"mansfield", "momentum"}."""
+    if method == "mansfield":
+        return compute_mansfield_rs(prices, lookback=lookback)
+    elif method == "momentum":
+        return compute_momentum_rs(prices, lookback=lookback)
+    else:
+        raise ValueError(f"Unknown RS method: {method!r}")
+
+
 def eligible_mask(prices: pd.DataFrame, min_history_days: int = config.MIN_HISTORY_DAYS) -> pd.DataFrame:
     """
     Boolean DataFrame: True where a ticker has at least `min_history_days` of

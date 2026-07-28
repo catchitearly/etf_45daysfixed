@@ -1,7 +1,11 @@
 """
-Builds a single self-contained docs/index.html dashboard (for GitHub Pages)
-from a completed backtest result. Data is baked into the page at build time
-as JSON; charts render client-side with Chart.js (CDN).
+Builds a single self-contained docs/index.html dashboard (for GitHub Pages).
+
+Runs BOTH RS methods (Mansfield vs Momentum, see etf_rotation.rs) across all
+three reporting segments -- each segment an INDEPENDENT simulation starting
+fresh with config.INITIAL_CAPITAL -- under IDENTICAL top_n / rebalance /
+cost rules, so any performance difference on the dashboard is attributable
+to the signal itself and not to some other config difference.
 """
 import json
 import os
@@ -10,15 +14,12 @@ import datetime as dt
 import pandas as pd
 
 from . import config
-from .backtest import compute_metrics, drawdown_series
+from .backtest import compute_metrics, drawdown_series, run_all_segments
+from .rs import rank_on_date
 
 
-def _series_for_chart(equity_curve: pd.DataFrame, start=None, end=None, rebase=True):
-    ec = equity_curve.copy()
-    if start:
-        ec = ec[ec.index >= pd.Timestamp(start)]
-    if end:
-        ec = ec[ec.index <= pd.Timestamp(end)]
+def _series_for_chart(equity_curve: pd.DataFrame, rebase=True):
+    ec = equity_curve
     if len(ec) == 0:
         return [], []
     eq = ec["equity"]
@@ -28,43 +29,35 @@ def _series_for_chart(equity_curve: pd.DataFrame, start=None, end=None, rebase=T
     return labels, [round(v, 3) for v in eq.tolist()]
 
 
-def _drawdown_for_chart(equity_curve: pd.DataFrame, start=None, end=None):
+def _drawdown_for_chart(equity_curve: pd.DataFrame):
     dd = drawdown_series(equity_curve) * 100
-    if start:
-        dd = dd[dd.index >= pd.Timestamp(start)]
-    if end:
-        dd = dd[dd.index <= pd.Timestamp(end)]
     labels = [d.strftime("%Y-%m-%d") for d in dd.index]
     return labels, [round(v, 3) for v in dd.tolist()]
 
 
-def build_segment_payload(equity_curve, trade_log, seg_start, seg_end, label):
-    metrics = compute_metrics(equity_curve, trade_log, start=seg_start, end=seg_end)
-    eq_labels, eq_vals = _series_for_chart(equity_curve, seg_start, seg_end)
-    dd_labels, dd_vals = _drawdown_for_chart(equity_curve, seg_start, seg_end)
+def _method_payload(result, label):
+    equity_curve = result["equity_curve"]
+    trade_log = result["trade_log"]
+    metrics = compute_metrics(equity_curve, trade_log)
+    eq_labels, eq_vals = _series_for_chart(equity_curve)
+    dd_labels, dd_vals = _drawdown_for_chart(equity_curve)
     return {
         "label": label,
-        "start": seg_start,
-        "end": seg_end,
         "metrics": metrics,
         "equity": {"labels": eq_labels, "values": eq_vals},
         "drawdown": {"labels": dd_labels, "values": dd_vals},
     }
 
 
-def build_current_ranking(rs: pd.DataFrame, prices: pd.DataFrame, top_n=config.TOP_N, as_of=None):
-    from .rs import rank_on_date
+def build_current_ranking(rs: pd.DataFrame, prices: pd.DataFrame, top_n, as_of=None):
     as_of = as_of or prices.index.max()
     ranked = rank_on_date(rs, prices, as_of, top_n=max(top_n, 10))
     rows = []
     for i, (t, val) in enumerate(ranked):
         rows.append({
-            "rank": i + 1,
-            "ticker": t,
-            "name": config.NAME_MAP.get(t, t),
-            "code": config.CODE_MAP.get(t, t),
-            "rs": round(val, 3),
-            "in_portfolio": i < top_n,
+            "rank": i + 1, "ticker": t,
+            "name": config.NAME_MAP.get(t, t), "code": config.CODE_MAP.get(t, t),
+            "rs": round(val, 3), "in_portfolio": i < top_n,
         })
     return {"as_of": str(pd.Timestamp(as_of).date()), "rows": rows}
 
@@ -95,42 +88,61 @@ def build_trade_log_table(trade_log: pd.DataFrame, n=40):
     return tl[cols].round(2).to_dict(orient="records")
 
 
-def build_signal_log_table(signal_log: pd.DataFrame, n=26):
+def build_signal_log_table(signal_log: pd.DataFrame, top_n, n=26):
     if signal_log is None or len(signal_log) == 0:
         return []
     sl = signal_log.copy().sort_values("execute_date", ascending=False).head(n)
     sl["scan_date"] = pd.to_datetime(sl["scan_date"]).dt.strftime("%Y-%m-%d")
     sl["execute_date"] = pd.to_datetime(sl["execute_date"]).dt.strftime("%Y-%m-%d")
-    rank_cols = [c for c in sl.columns if c.startswith("rank_")]
+    rank_cols = [f"rank_{i+1}" for i in range(top_n)]
     sl["top_n"] = sl[rank_cols].apply(
         lambda r: ", ".join(config.CODE_MAP.get(t, t) for t in r if isinstance(t, str)), axis=1
     )
     return sl[["scan_date", "execute_date", "top_n"]].to_dict(orient="records")
 
 
-def render_dashboard(result, prices, top_n=config.TOP_N, out_path=config.DASHBOARD_HTML):
-    equity_curve = result["equity_curve"]
-    trade_log = result["trade_log"]
-    signal_log = result["signal_log"]
-    rs = result["rs"]
-    pf = result["final_portfolio"]
+SEGMENT_LABELS = {
+    "backtest": "Backtest 2018\u20132024",
+    "ft1": "Forward Test 2025",
+    "ft2": "Forward Test 2026 (YTD)",
+}
 
-    s1, e1 = config.SEGMENT_1
-    s2, e2 = config.SEGMENT_2
-    s3, e3 = config.SEGMENT_3
-    e3 = e3 or str(prices.index.max().date())
 
-    segments = [
-        build_segment_payload(equity_curve, trade_log, s1, e1, "Backtest 2018\u20132024"),
-        build_segment_payload(equity_curve, trade_log, s2, e2, "Forward Test 2025"),
-        build_segment_payload(equity_curve, trade_log, s3, e3, "Forward Test 2026 (YTD)"),
-    ]
-    combined = build_segment_payload(equity_curve, trade_log, config.BACKTEST_START, e3, "Full Period")
+def render_dashboard(prices, top_n=config.TOP_N, methods=None, rebalance_mode=None,
+                      out_path=config.DASHBOARD_HTML):
+    methods = methods or config.RS_METHODS
+    rebalance_mode = rebalance_mode or config.REBALANCE_MODE
 
-    ranking = build_current_ranking(rs, prices, top_n=top_n)
-    holdings = build_holdings_table(pf, prices)
-    trades = build_trade_log_table(trade_log)
-    signals = build_signal_log_table(signal_log)
+    all_results = run_all_segments(prices, methods=methods, top_n=top_n, rebalance_mode=rebalance_mode)
+
+    segments_payload = []
+    for seg_key, seg_label in SEGMENT_LABELS.items():
+        seg_entry = {"key": seg_key, "label": seg_label, "methods": {}}
+        for method in methods:
+            result = all_results[method][seg_key]
+            seg_entry["methods"][method] = _method_payload(result, seg_label)
+        segments_payload.append(seg_entry)
+
+    # comparison table: one row per (segment, method)
+    comparison_rows = []
+    for seg_key, seg_label in SEGMENT_LABELS.items():
+        for method in methods:
+            m = all_results[method][seg_key]
+            metrics = compute_metrics(m["equity_curve"], m["trade_log"])
+            comparison_rows.append({"segment": seg_label, "method": method, **metrics})
+
+    # "current" state = latest segment (ft2), shown per method
+    latest_seg = "ft2"
+    ranking = {}
+    holdings = {}
+    trades = {}
+    signals = {}
+    for method in methods:
+        result = all_results[method][latest_seg]
+        ranking[method] = build_current_ranking(result["rs"], prices, top_n)
+        holdings[method] = build_holdings_table(result["final_portfolio"], prices)
+        trades[method] = build_trade_log_table(result["trade_log"])
+        signals[method] = build_signal_log_table(result["signal_log"], top_n)
 
     payload = {
         "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M IST"),
@@ -138,8 +150,10 @@ def render_dashboard(result, prices, top_n=config.TOP_N, out_path=config.DASHBOA
         "lookback": config.LOOKBACK_DAYS,
         "initial_capital": config.INITIAL_CAPITAL,
         "txn_cost_bps": config.TXN_COST_BPS,
-        "segments": segments,
-        "combined": combined,
+        "rebalance_mode": rebalance_mode,
+        "methods": methods,
+        "segments": segments_payload,
+        "comparison_rows": comparison_rows,
         "ranking": ranking,
         "holdings": holdings,
         "trades": trades,
@@ -152,6 +166,13 @@ def render_dashboard(result, prices, top_n=config.TOP_N, out_path=config.DASHBOA
         f.write(html)
     return out_path
 
+
+_METHOD_META = {
+    "mansfield": {"name": "Mansfield RS", "color": "#4FD8C0",
+                  "desc": "ratio-vs-own-45d-SMA \u2014 smoothed, lags trend changes"},
+    "momentum": {"name": "Momentum RS", "color": "#E3B341",
+                 "desc": "raw 45d return vs peer average \u2014 unsmoothed, reacts immediately"},
+}
 
 _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
@@ -175,36 +196,46 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   header .sub{color:var(--muted); font-family:var(--mono); font-size:12px; margin-top:6px;}
   .meta{font-family:var(--mono); font-size:12px; color:var(--muted); text-align:right;}
   .meta b{color:var(--amber);}
-  main{padding:24px 32px 60px; max-width:1280px; margin:0 auto;}
+  main{padding:24px 32px 60px; max-width:1320px; margin:0 auto;}
 
   .tabs{display:flex; gap:4px; margin-bottom:20px; border-bottom:1px solid var(--border); flex-wrap:wrap;}
   .tab{padding:10px 16px; font-family:var(--mono); font-size:13px; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; user-select:none;}
   .tab.active{color:var(--teal); border-bottom-color:var(--teal);}
+  .tab.comparison-tab.active{color:var(--amber); border-bottom-color:var(--amber);}
 
-  .grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-bottom:20px;}
-  .card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 16px;}
-  .card .label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-family:var(--mono);}
-  .card .value{font-family:var(--mono); font-size:22px; font-weight:600; margin-top:6px;}
+  .method-cols{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;}
+  @media(max-width:820px){ .method-cols{grid-template-columns:1fr;} }
+  .method-head{display:flex; align-items:center; gap:8px; margin-bottom:10px; font-family:var(--mono); font-size:13px; font-weight:600;}
+  .dot{width:9px; height:9px; border-radius:50%; display:inline-block;}
+  .method-desc{color:var(--muted); font-size:11px; font-family:var(--mono); margin-bottom:12px;}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:10px; margin-bottom:14px;}
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 14px;}
+  .card .label{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-family:var(--mono);}
+  .card .value{font-family:var(--mono); font-size:18px; font-weight:600; margin-top:5px;}
   .pos{color:var(--teal);} .neg{color:var(--coral);}
 
   .panel{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:18px 20px; margin-bottom:20px;}
   .panel h3{margin:0 0 14px; font-size:14px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; font-family:var(--mono);}
-  .chart-wrap{position:relative; height:280px;}
+  .chart-wrap{position:relative; height:300px;}
+  .chart-wrap.small{height:220px;}
 
-  table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px;}
-  th{text-align:left; color:var(--muted); font-weight:500; padding:8px 10px; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:.04em;}
-  td{padding:7px 10px; border-bottom:1px solid #1B222C;}
+  table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12px;}
+  th{text-align:left; color:var(--muted); font-weight:500; padding:7px 9px; border-bottom:1px solid var(--border); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;}
+  td{padding:6px 9px; border-bottom:1px solid #1B222C;}
   tr:hover td{background:var(--panel2);}
   .buy{color:var(--teal);} .sell{color:var(--coral);}
-  .chip{display:inline-block; padding:2px 8px; border-radius:20px; background:var(--panel2); border:1px solid var(--border); font-size:11px; margin:2px;}
-  .chip.in{border-color:var(--teal); color:var(--teal);}
 
   .rs-bar-row{display:flex; align-items:center; gap:10px; margin-bottom:6px;}
-  .rs-bar-row .rk{width:22px; color:var(--muted); font-family:var(--mono); font-size:12px;}
-  .rs-bar-row .tk{width:130px; font-family:var(--mono); font-size:12.5px; flex-shrink:0;}
-  .rs-bar-track{flex:1; background:var(--panel2); border-radius:4px; height:16px; overflow:hidden; position:relative;}
+  .rs-bar-row .rk{width:20px; color:var(--muted); font-family:var(--mono); font-size:11px;}
+  .rs-bar-row .tk{width:110px; font-family:var(--mono); font-size:11.5px; flex-shrink:0;}
+  .rs-bar-track{flex:1; background:var(--panel2); border-radius:4px; height:14px; overflow:hidden; position:relative;}
   .rs-bar-fill{height:100%; border-radius:4px;}
-  .rs-bar-val{width:60px; text-align:right; font-family:var(--mono); font-size:12px; color:var(--muted);}
+  .rs-bar-val{width:56px; text-align:right; font-family:var(--mono); font-size:11px; color:var(--muted);}
+
+  .subtabs{display:flex; gap:4px; margin-bottom:14px;}
+  .subtab{padding:6px 12px; font-family:var(--mono); font-size:11.5px; color:var(--muted); cursor:pointer; background:var(--panel2); border:1px solid var(--border); border-radius:6px;}
+  .subtab.active{color:var(--bg); background:var(--teal); border-color:var(--teal);}
 
   footer{text-align:center; color:var(--muted); font-family:var(--mono); font-size:11px; padding:30px; border-top:1px solid var(--border);}
   @media(max-width:700px){ main{padding:16px;} header{padding:20px 16px;} }
@@ -214,32 +245,41 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <header>
   <div>
     <h1>ETF Relative-Strength Rotation</h1>
-    <div class="sub">Mansfield RS vs. peer basket &middot; 45d lookback &middot; weekly Saturday scan / Monday execution</div>
+    <div class="sub" id="subHeader"></div>
   </div>
-  <div class="meta">Last updated <b id="genAt"></b><br>Capital \u20b9<span id="capital"></span> &middot; Top-<span id="topn"></span> &middot; cost <span id="cost"></span> bps/trade</div>
+  <div class="meta">Last updated <b id="genAt"></b><br>Capital \u20b9<span id="capital"></span> (fresh per segment) &middot; Top-<span id="topn"></span> &middot; cost <span id="cost"></span> bps/trade</div>
 </header>
 <main>
-
-  <div class="panel">
-    <h3>Current Relative-Strength Ranking <span id="rankAsOf" style="color:var(--muted); text-transform:none; font-weight:400;"></span></h3>
-    <div id="rsLeaderboard"></div>
-  </div>
 
   <div class="tabs" id="segTabs"></div>
   <div id="segBody"></div>
 
   <div class="panel">
+    <h3>Method Comparison Summary</h3>
+    <table id="comparisonTable"></table>
+  </div>
+
+  <div class="panel">
+    <h3>Current Relative-Strength Ranking <span id="rankAsOf" style="color:var(--muted); text-transform:none; font-weight:400;"></span></h3>
+    <div class="subtabs" id="rankSubtabs"></div>
+    <div id="rsLeaderboard"></div>
+  </div>
+
+  <div class="panel">
     <h3>Current Holdings <span id="holdAsOf" style="color:var(--muted); text-transform:none; font-weight:400;"></span></h3>
+    <div class="subtabs" id="holdSubtabs"></div>
     <table id="holdingsTable"></table>
   </div>
 
   <div class="panel">
-    <h3>Weekly Signal Log (most recent)</h3>
+    <h3>Weekly Signal Log (most recent, current segment)</h3>
+    <div class="subtabs" id="signalSubtabs"></div>
     <table id="signalTable"></table>
   </div>
 
   <div class="panel">
-    <h3>Trade Log (most recent)</h3>
+    <h3>Trade Log (most recent, current segment)</h3>
+    <div class="subtabs" id="tradeSubtabs"></div>
     <table id="tradeTable"></table>
   </div>
 
@@ -248,67 +288,93 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <script>
 const DATA = __PAYLOAD_JSON__;
+const METHOD_META = {
+  mansfield: {name:'Mansfield RS', color:'#4FD8C0', desc:'ratio-vs-own-45d-SMA \u2014 smoothed, lags trend changes'},
+  momentum:  {name:'Momentum RS',  color:'#E3B341', desc:'raw 45d return vs peer average \u2014 unsmoothed, reacts immediately'}
+};
+
 document.getElementById('genAt').textContent = DATA.generated_at;
 document.getElementById('capital').textContent = DATA.initial_capital.toLocaleString('en-IN');
 document.getElementById('topn').textContent = DATA.top_n;
 document.getElementById('cost').textContent = (DATA.txn_cost_bps*10000).toFixed(0);
+document.getElementById('subHeader').textContent =
+  `${DATA.methods.map(m=>METHOD_META[m].name).join(' vs ')} \u00b7 ${DATA.lookback}d lookback \u00b7 rebalance: ${DATA.rebalance_mode} \u00b7 weekly Saturday scan / Monday execution`;
 
 function fmtPct(v){ if(v===null||v===undefined) return '\u2014'; const cls = v>=0?'pos':'neg'; return '<span class="'+cls+'">'+(v>=0?'+':'')+v.toFixed(2)+'%</span>'; }
 function fmtNum(v){ return v===null||v===undefined ? '\u2014' : Number(v).toLocaleString('en-IN'); }
 
-// --- RS leaderboard ---
-const lb = document.getElementById('rsLeaderboard');
-document.getElementById('rankAsOf').textContent = '\u2014 as of ' + DATA.ranking.as_of;
-const maxAbsRS = Math.max(...DATA.ranking.rows.map(r=>Math.abs(r.rs)), 1);
-DATA.ranking.rows.forEach(r=>{
-  const pct = Math.min(Math.abs(r.rs)/maxAbsRS*100, 100);
-  const color = r.in_portfolio ? 'var(--teal)' : (r.rs>=0 ? '#3A5F58' : 'var(--coral)');
-  const row = document.createElement('div');
-  row.className = 'rs-bar-row';
-  row.innerHTML = `<div class="rk">${r.rank}</div><div class="tk">${r.code} <span style="color:var(--muted)">${r.in_portfolio?'\u25CF':''}</span></div>
-    <div class="rs-bar-track"><div class="rs-bar-fill" style="width:${pct}%; background:${color};"></div></div>
-    <div class="rs-bar-val">${r.rs.toFixed(2)}</div>`;
-  lb.appendChild(row);
-});
-
-// --- Segment tabs ---
-const allSegs = [DATA.combined, ...DATA.segments];
+// ============================================================
+// Segment tabs (Backtest / FT1 / FT2), each showing both methods side by side
+// ============================================================
 const tabsEl = document.getElementById('segTabs');
 const bodyEl = document.getElementById('segBody');
 let charts = [];
 
 function renderSeg(idx){
   charts.forEach(c=>c.destroy()); charts=[];
-  const seg = allSegs[idx];
-  const m = seg.metrics;
+  const seg = DATA.segments[idx];
+
+  let cardsHtml = '<div class="method-cols">';
+  DATA.methods.forEach(method=>{
+    const mp = seg.methods[method];
+    const meta = METHOD_META[method];
+    const m = mp.metrics;
+    cardsHtml += `<div>
+      <div class="method-head"><span class="dot" style="background:${meta.color}"></span>${meta.name}</div>
+      <div class="method-desc">${meta.desc}</div>
+      <div class="grid">
+        <div class="card"><div class="label">Total Return</div><div class="value">${fmtPct(m.total_return_pct)}</div></div>
+        <div class="card"><div class="label">CAGR</div><div class="value">${fmtPct(m.cagr_pct)}</div></div>
+        <div class="card"><div class="label">Max DD</div><div class="value">${fmtPct(m.max_drawdown_pct)}</div></div>
+        <div class="card"><div class="label">Sharpe</div><div class="value">${m.sharpe ?? '\u2014'}</div></div>
+        <div class="card"><div class="label">Calmar</div><div class="value">${m.calmar ?? '\u2014'}</div></div>
+        <div class="card"><div class="label">Trades</div><div class="value">${fmtNum(m.num_trades)}</div></div>
+      </div>
+    </div>`;
+  });
+  cardsHtml += '</div>';
+
   bodyEl.innerHTML = `
-    <div class="grid">
-      <div class="card"><div class="label">Total Return</div><div class="value">${fmtPct(m.total_return_pct)}</div></div>
-      <div class="card"><div class="label">CAGR</div><div class="value">${fmtPct(m.cagr_pct)}</div></div>
-      <div class="card"><div class="label">Max Drawdown</div><div class="value">${fmtPct(m.max_drawdown_pct)}</div></div>
-      <div class="card"><div class="label">Sharpe</div><div class="value">${m.sharpe ?? '\u2014'}</div></div>
-      <div class="card"><div class="label">Calmar</div><div class="value">${m.calmar ?? '\u2014'}</div></div>
-      <div class="card"><div class="label">Trades</div><div class="value">${fmtNum(m.num_trades)}</div></div>
-    </div>
-    <div class="panel"><h3>Equity Curve (rebased to 100) &mdash; ${seg.start} to ${seg.end}</h3><div class="chart-wrap"><canvas id="eqChart"></canvas></div></div>
-    <div class="panel"><h3>Drawdown</h3><div class="chart-wrap"><canvas id="ddChart"></canvas></div></div>
+    ${cardsHtml}
+    <div class="panel"><h3>Equity Curve Overlay (rebased to 100)</h3><div class="chart-wrap"><canvas id="eqChart"></canvas></div></div>
+    <div class="panel"><h3>Drawdown Overlay</h3><div class="chart-wrap small"><canvas id="ddChart"></canvas></div></div>
   `;
-  const eqCtx = document.getElementById('eqChart');
-  charts.push(new Chart(eqCtx, {
+
+  const eqDatasets = DATA.methods.map(method=>{
+    const mp = seg.methods[method];
+    const meta = METHOD_META[method];
+    return { label: meta.name, data: mp.equity.values, borderColor: meta.color,
+             backgroundColor: 'transparent', fill:false, pointRadius:0, borderWidth:1.6, tension:0.1 };
+  });
+  const anyLabels = seg.methods[DATA.methods[0]].equity.labels;
+  charts.push(new Chart(document.getElementById('eqChart'), {
     type:'line',
-    data:{ labels: seg.equity.labels, datasets:[{ data: seg.equity.values, borderColor:'#4FD8C0', backgroundColor:'rgba(79,216,192,0.08)', fill:true, pointRadius:0, borderWidth:1.5, tension:0.1 }]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ ticks:{ color:'#8A97A6', maxTicksLimit:8, font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}, y:{ ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}}}
+    data:{ labels: anyLabels, datasets: eqDatasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8A97A6', font:{family:'IBM Plex Mono', size:11}}}},
+      scales:{ x:{ ticks:{ color:'#8A97A6', maxTicksLimit:8, font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}},
+               y:{ ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}}}
   }));
-  const ddCtx = document.getElementById('ddChart');
-  charts.push(new Chart(ddCtx, {
+
+  const ddDatasets = DATA.methods.map(method=>{
+    const mp = seg.methods[method];
+    const meta = METHOD_META[method];
+    return { label: meta.name, data: mp.drawdown.values, borderColor: meta.color,
+             backgroundColor:'transparent', fill:false, pointRadius:0, borderWidth:1.4, tension:0.1 };
+  });
+  charts.push(new Chart(document.getElementById('ddChart'), {
     type:'line',
-    data:{ labels: seg.drawdown.labels, datasets:[{ data: seg.drawdown.values, borderColor:'#FF7B72', backgroundColor:'rgba(255,123,114,0.12)', fill:true, pointRadius:0, borderWidth:1.5, tension:0.1 }]},
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ ticks:{ color:'#8A97A6', maxTicksLimit:8, font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}, y:{ ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}}}
+    data:{ labels: anyLabels, datasets: ddDatasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8A97A6', font:{family:'IBM Plex Mono', size:11}}}},
+      scales:{ x:{ ticks:{ color:'#8A97A6', maxTicksLimit:8, font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}},
+               y:{ ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}}}
   }));
+
   [...tabsEl.children].forEach((t,i)=>t.classList.toggle('active', i===idx));
 }
 
-allSegs.forEach((seg,i)=>{
+DATA.segments.forEach((seg,i)=>{
   const t = document.createElement('div');
   t.className = 'tab' + (i===0?' active':'');
   t.textContent = seg.label;
@@ -317,21 +383,74 @@ allSegs.forEach((seg,i)=>{
 });
 renderSeg(0);
 
-// --- Holdings table ---
-document.getElementById('holdAsOf').textContent = '\u2014 as of ' + DATA.holdings.as_of + ' \u00b7 total value \u20b9' + fmtNum(DATA.holdings.total_value) + ' \u00b7 cash \u20b9' + fmtNum(DATA.holdings.cash);
-const ht = document.getElementById('holdingsTable');
-ht.innerHTML = '<tr><th>Ticker</th><th>Name</th><th>Units</th><th>Price</th><th>Value</th></tr>' +
-  DATA.holdings.rows.map(r=>`<tr><td>${r.ticker}</td><td>${r.name}</td><td>${fmtNum(r.units)}</td><td>${r.price??'\u2014'}</td><td>\u20b9${fmtNum(r.value)}</td></tr>`).join('');
+// ============================================================
+// Comparison summary table
+// ============================================================
+const ct = document.getElementById('comparisonTable');
+ct.innerHTML = '<tr><th>Segment</th><th>Method</th><th>Total Return</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th><th>Calmar</th><th>Trades</th></tr>' +
+  DATA.comparison_rows.map(r=>{
+    const meta = METHOD_META[r.method];
+    return `<tr><td>${r.segment}</td><td><span class="dot" style="background:${meta.color}; margin-right:6px;"></span>${meta.name}</td>
+      <td>${fmtPct(r.total_return_pct)}</td><td>${fmtPct(r.cagr_pct)}</td><td>${fmtPct(r.max_drawdown_pct)}</td>
+      <td>${r.sharpe ?? '\u2014'}</td><td>${r.calmar ?? '\u2014'}</td><td>${fmtNum(r.num_trades)}</td></tr>`;
+  }).join('');
 
-// --- Signal log ---
-const st = document.getElementById('signalTable');
-st.innerHTML = '<tr><th>Scan (Sat/Fri close)</th><th>Executed (Mon close)</th><th>Top-N</th></tr>' +
-  DATA.signals.map(r=>`<tr><td>${r.scan_date}</td><td>${r.execute_date}</td><td>${r.top_n}</td></tr>`).join('');
+// ============================================================
+// Per-method sub-tabbed sections: ranking / holdings / signals / trades
+// ============================================================
+function buildSubtabs(containerId, renderFn){
+  const el = document.getElementById(containerId);
+  DATA.methods.forEach((method,i)=>{
+    const b = document.createElement('div');
+    b.className = 'subtab' + (i===0?' active':'');
+    b.textContent = METHOD_META[method].name;
+    b.onclick = ()=>{
+      [...el.children].forEach(c=>c.classList.remove('active'));
+      b.classList.add('active');
+      renderFn(method);
+    };
+    el.appendChild(b);
+  });
+  renderFn(DATA.methods[0]);
+}
 
-// --- Trade log ---
-const tt = document.getElementById('tradeTable');
-tt.innerHTML = '<tr><th>Date</th><th>Action</th><th>Ticker</th><th>Name</th><th>Units</th><th>Price</th><th>Gross</th><th>Cost</th></tr>' +
-  DATA.trades.map(r=>`<tr><td>${r.date}</td><td class="${r.action==='BUY'?'buy':'sell'}">${r.action}</td><td>${r.ticker}</td><td>${r.name}</td><td>${fmtNum(r.units)}</td><td>${r.price}</td><td>${fmtNum(r.gross)}</td><td>${r.cost}</td></tr>`).join('');
+buildSubtabs('rankSubtabs', (method)=>{
+  const rk = DATA.ranking[method];
+  document.getElementById('rankAsOf').textContent = '\u2014 as of ' + rk.as_of;
+  const lb = document.getElementById('rsLeaderboard');
+  lb.innerHTML = '';
+  const maxAbsRS = Math.max(...rk.rows.map(r=>Math.abs(r.rs)), 1);
+  rk.rows.forEach(r=>{
+    const pct = Math.min(Math.abs(r.rs)/maxAbsRS*100, 100);
+    const color = r.in_portfolio ? METHOD_META[method].color : (r.rs>=0 ? '#3A5F58' : 'var(--coral)');
+    const row = document.createElement('div');
+    row.className = 'rs-bar-row';
+    row.innerHTML = `<div class="rk">${r.rank}</div><div class="tk">${r.code}</div>
+      <div class="rs-bar-track"><div class="rs-bar-fill" style="width:${pct}%; background:${color};"></div></div>
+      <div class="rs-bar-val">${r.rs.toFixed(2)}</div>`;
+    lb.appendChild(row);
+  });
+});
+
+buildSubtabs('holdSubtabs', (method)=>{
+  const h = DATA.holdings[method];
+  document.getElementById('holdAsOf').textContent = '\u2014 as of ' + h.as_of + ' \u00b7 total value \u20b9' + fmtNum(h.total_value) + ' \u00b7 cash \u20b9' + fmtNum(h.cash);
+  const ht = document.getElementById('holdingsTable');
+  ht.innerHTML = '<tr><th>Ticker</th><th>Name</th><th>Units</th><th>Price</th><th>Value</th></tr>' +
+    h.rows.map(r=>`<tr><td>${r.ticker}</td><td>${r.name}</td><td>${fmtNum(r.units)}</td><td>${r.price??'\u2014'}</td><td>\u20b9${fmtNum(r.value)}</td></tr>`).join('');
+});
+
+buildSubtabs('signalSubtabs', (method)=>{
+  const st = document.getElementById('signalTable');
+  st.innerHTML = '<tr><th>Scan (Sat/Fri close)</th><th>Executed (Mon close)</th><th>Top-N</th></tr>' +
+    DATA.signals[method].map(r=>`<tr><td>${r.scan_date}</td><td>${r.execute_date}</td><td>${r.top_n}</td></tr>`).join('');
+});
+
+buildSubtabs('tradeSubtabs', (method)=>{
+  const tt = document.getElementById('tradeTable');
+  tt.innerHTML = '<tr><th>Date</th><th>Action</th><th>Ticker</th><th>Name</th><th>Units</th><th>Price</th><th>Gross</th><th>Cost</th></tr>' +
+    DATA.trades[method].map(r=>`<tr><td>${r.date}</td><td class="${r.action==='BUY'?'buy':'sell'}">${r.action}</td><td>${r.ticker}</td><td>${r.name}</td><td>${fmtNum(r.units)}</td><td>${r.price}</td><td>${fmtNum(r.gross)}</td><td>${r.cost}</td></tr>`).join('');
+});
 </script>
 </body>
 </html>

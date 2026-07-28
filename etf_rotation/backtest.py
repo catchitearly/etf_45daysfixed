@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .rs import compute_mansfield_rs, rank_on_date
+from .rs import compute_rs, rank_on_date
 from .portfolio import Portfolio
 
 
@@ -45,11 +45,22 @@ def build_week_anchors(price_index: pd.DatetimeIndex, start, end):
 
 def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
                   top_n: int = config.TOP_N, lookback: int = config.LOOKBACK_DAYS,
-                  initial_capital: float = config.INITIAL_CAPITAL):
+                  initial_capital: float = config.INITIAL_CAPITAL,
+                  rs_method: str = "mansfield", rebalance_mode: str = None):
     """
     Runs the full weekly rotation simulation over prices.index restricted to
     [start, end]. `prices` should already include the warm-up buffer before
     `start` needed for the RS lookback to be valid on day 1.
+
+    Each call is an INDEPENDENT simulation: it always starts with
+    `initial_capital` in cash and no holdings, regardless of what happened
+    before `start` in the underlying price data. This is what lets the three
+    reporting segments (backtest / FT1 / FT2) each be reported as their own
+    fresh ₹10L run, rather than one continuously-compounding curve.
+
+    rs_method: "mansfield" or "momentum" (see etf_rotation.rs)
+    rebalance_mode: "full_liquidate" or "diff" (see etf_rotation.portfolio);
+                     defaults to config.REBALANCE_MODE.
 
     Returns dict with:
       equity_curve: DataFrame indexed by date with columns [equity, cash]
@@ -58,10 +69,11 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
       holdings_log: DataFrame, weekly snapshot of holdings after execution
       final_portfolio: Portfolio object
     """
+    rebalance_mode = rebalance_mode or config.REBALANCE_MODE
     end = pd.Timestamp(end) if end else prices.index.max()
     start = pd.Timestamp(start)
 
-    rs = compute_mansfield_rs(prices, lookback=lookback)
+    rs = compute_rs(prices, lookback=lookback, method=rs_method)
 
     sim_index = prices.index[(prices.index >= start) & (prices.index <= end)]
     if len(sim_index) == 0:
@@ -72,8 +84,6 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
     pf = Portfolio(cash=initial_capital)
     signal_rows = []
     holdings_rows = []
-
-    exec_dates = {ex: sc for sc, ex in anchors}  # execute_date -> scan_date, for the daily loop below
 
     anchor_map = {}
     for sc, ex in anchors:
@@ -96,7 +106,7 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
 
             prices_on_date = prices.loc[date].to_dict()
             if len(top_tickers) > 0:
-                pf.rebalance(date, top_tickers, prices_on_date)
+                pf.rebalance(date, top_tickers, prices_on_date, mode=rebalance_mode)
 
             holdings_rows.append({
                 "date": date,
@@ -120,7 +130,39 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
         "holdings_log": holdings_log,
         "final_portfolio": pf,
         "rs": rs,
+        "rs_method": rs_method,
+        "rebalance_mode": rebalance_mode,
     }
+
+
+def run_all_segments(prices: pd.DataFrame, methods=None, top_n: int = config.TOP_N,
+                      lookback: int = config.LOOKBACK_DAYS,
+                      initial_capital: float = config.INITIAL_CAPITAL,
+                      rebalance_mode: str = None):
+    """
+    Runs EVERY (rs_method x segment) combination as an independent simulation
+    (fresh initial_capital, no carryover between segments), for side-by-side
+    comparison on the dashboard.
+
+    Returns: { method: { "backtest": result, "ft1": result, "ft2": result } }
+    """
+    methods = methods or config.RS_METHODS
+    s1, e1 = config.SEGMENT_1
+    s2, e2 = config.SEGMENT_2
+    s3, e3 = config.SEGMENT_3
+    e3 = e3 or str(prices.index.max().date())
+
+    segment_defs = [("backtest", s1, e1), ("ft1", s2, e2), ("ft2", s3, e3)]
+
+    out = {}
+    for method in methods:
+        out[method] = {}
+        for key, seg_start, seg_end in segment_defs:
+            out[method][key] = run_backtest(
+                prices, start=seg_start, end=seg_end, top_n=top_n, lookback=lookback,
+                initial_capital=initial_capital, rs_method=method, rebalance_mode=rebalance_mode,
+            )
+    return out
 
 
 # ---------------------------------------------------------------------------

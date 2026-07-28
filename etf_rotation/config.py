@@ -41,12 +41,17 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 25                     # Mansfield RS smoothing window (trading days)
+LOOKBACK_DAYS = 45                     # RS smoothing / momentum window (trading days)
 TOP_N = int(os.environ.get("TOP_N", 3))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
-INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000
+INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH segment (see backtest.py)
 TXN_COST_BPS = 0.0005                  # 0.05% per executed trade (buy or sell), covers brokerage+STT+slippage
+
+RS_METHODS = ["mansfield", "momentum"]   # signal styles compared side-by-side on the dashboard
+REBALANCE_MODE = "full_liquidate"        # "full_liquidate": sell ALL holdings + equal-weight rebuy top_n
+                                          # whenever the top_n SET changes (even continuing names churn).
+                                          # "diff": only trade the diffs (kept as an option in portfolio.py).
 
 # ---------------------------------------------------------------------------
 # Backtest / reporting date ranges
