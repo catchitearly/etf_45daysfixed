@@ -68,24 +68,58 @@ methods.
 | Forward Test 2025 | 2025-01-01 → 2025-12-31 | Out-of-sample, independent ₹10L run |
 | Forward Test 2026 | 2026-01-01 → today | Out-of-sample, ongoing, independent ₹10L run |
 
+## Robustness & curve-fit-avoidance suite
+
+A separate, deliberately-not-weekly script/workflow that stress-tests the
+strategy so a good backtest number can't hide overfitting or luck:
+
+| Check | What it does | Where |
+|---|---|---|
+| **Lookback stability sweep** | Runs lookback = 15, 20, 25, ..., 90 (step 5) for both RS methods over the full period. A real edge is a smooth hill in Sharpe/CAGR vs. lookback; a spike at one value with noise around it is curve-fitting. | Dashboard → *Robustness* tab, section A |
+| **Walk-forward validation** | Picks the best-Sharpe lookback using ONLY 2018–2022 (train), locks it, then tests that exact config — no re-tuning — on 2023–2024, 2025, and 2026 YTD. | Section B |
+| **Regime-split testing** | The locked config run separately across 2018 (choppy), 2019 (sideways), 2020–2021 (COVID crash + bull), 2022 (bear/choppy), 2023–2024 (bull), so a trend-only strategy can't hide behind a good blended average. | Section C |
+| **Bootstrap resampling** | Extracts genuine round-trip trades (BUY paired with its subsequent SELL — exact, since a ticker never has overlapping lots under `full_liquidate`), resamples them with replacement 1000x, and reports the *distribution* of return/Sharpe — not just the point estimate. If the 5th percentile is near/below zero, the edge may not be statistically robust. | Section D |
+| **Trade-order shuffle test** | Same trades, reordered randomly 500x, equity curve rebuilt each time. Total return is necessarily identical (same multiset of returns), but Max Drawdown/Calmar are path-dependent — wide spread means the headline drawdown number owes a lot to sequencing luck. | Section E |
+| **Data-quality / bad-tick check** | Flags any single-day price move >20% (ETFs essentially never move this much normally — could be a stale/bad print or an unadjusted corporate action) and independently re-verifies the portfolio's equity never went negative or NaN. | Section F |
+
+Run it:
+```bash
+python scripts/run_robustness.py     # writes data/robustness.json (~1-3 min with real data)
+python scripts/run.py                # rebuild dashboard so it picks up the new file
+```
+Or trigger the **Robustness Sweep** GitHub Actions workflow manually (or let
+it run on its monthly schedule) — see `.github/workflows/robustness_sweep.yml`.
+It's kept separate from the Monday refresh because it's ~16x more
+compute (16 lookbacks × 2 methods, twice over, plus resampling).
+
+**Defensive checks always on** (not just in the sweep): `Portfolio` asserts
+cash and market value can never go negative for this unlevered, long-only,
+cash-settled strategy — if a bad price tick or a sizing bug ever produced
+an impossible number, the simulation fails loudly immediately rather than
+silently producing a corrupted equity curve and drawdown stat.
+
 ## Repo layout
 
 ```
 etf_rotation/
-  config.py        # ETF list + all strategy parameters (TOP_N, RS_METHODS, REBALANCE_MODE, etc.)
+  config.py        # ETF list + all strategy parameters (TOP_N, RS_METHODS, REBALANCE_MODE, LOOKBACK_SWEEP, etc.)
   data.py          # yfinance fetch + local CSV cache, and a synthetic-data
                     # generator used only for offline pipeline testing
+  data_quality.py   # bad-price-tick flagging + portfolio invariant re-check
   rs.py            # RS engines: compute_mansfield_rs, compute_momentum_rs, compute_rs (dispatcher)
-  portfolio.py      # both rebalance modes (full_liquidate / diff) + transaction costs
+  portfolio.py      # both rebalance modes (full_liquidate / diff) + transaction costs + invariant asserts
   backtest.py       # weekly simulation loop, run_all_segments() (method x segment grid), metrics
-  dashboard.py       # renders docs/index.html with side-by-side method comparison
+  robustness.py      # lookback sweep, walk-forward validation, regime split, bootstrap, shuffle test
+  dashboard.py       # renders docs/index.html with side-by-side method comparison + Robustness tab
 scripts/
   run.py                    # fetch data -> run_all_segments -> dashboard (used by Monday workflow)
   weekly_scan_preview.py    # Saturday-only preview of what Monday would trade, for both methods
+  run_robustness.py         # the curve-fit-avoidance suite (separate, less frequent)
 .github/workflows/
-  saturday_scan.yml   # Sat 11:30am IST — publishes preview of next Monday's trades (both methods)
-  monday_refresh.yml  # Mon 6pm IST (+Tue fallback) — runs all simulations, updates dashboard, deploys to Pages
-data/                  # price cache, latest signal (all regenerated)
+  saturday_scan.yml     # Sat 11:30am IST — publishes preview of next Monday's trades (both methods)
+  monday_refresh.yml    # Mon 6pm IST (+Tue fallback) — runs all simulations, updates dashboard, deploys to Pages
+  robustness_sweep.yml  # manual / monthly — lookback sweep + walk-forward + bootstrap, updates dashboard, deploys to Pages
+data/                  # price cache, latest signal, robustness.json (all regenerated)
 docs/index.html        # the dashboard (GitHub Pages serves this folder)
 ```
 

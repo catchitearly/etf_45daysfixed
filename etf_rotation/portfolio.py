@@ -34,6 +34,12 @@ class Portfolio:
             px = prices_on_date.get(t)
             if px is not None and px == px:  # not NaN
                 mv += units * px
+        assert mv >= -1e-6, (
+            f"Portfolio invariant violated: market value went negative ({mv:.2f}). "
+            f"This is an unlevered, long-only, cash-only strategy -- equity should "
+            f"never go negative. Likely a bad price tick or a sizing bug; inspect "
+            f"holdings={self.holdings} and prices_on_date={prices_on_date}."
+        )
         return mv
 
     # ------------------------------------------------------------------
@@ -67,6 +73,11 @@ class Portfolio:
             cost = gross * self.cost_bps
             total_spend = gross + cost
             self.cash -= total_spend
+            assert self.cash >= -1e-6, (
+                f"Portfolio invariant violated: cash went negative ({self.cash:.2f}) "
+                f"buying {t} on {date}. Position sizing should always floor to what's "
+                f"affordable -- this indicates a sizing bug, not a market event."
+            )
             self.holdings[t] = self.holdings.get(t, 0) + units
             self.trade_log.append({
                 "date": date, "action": "BUY", "ticker": t,

@@ -108,6 +108,13 @@ SEGMENT_LABELS = {
 }
 
 
+def _load_robustness_payload():
+    if not os.path.exists(config.ROBUSTNESS_JSON):
+        return None
+    with open(config.ROBUSTNESS_JSON) as f:
+        return json.load(f)
+
+
 def render_dashboard(prices, top_n=config.TOP_N, methods=None, rebalance_mode=None,
                       out_path=config.DASHBOARD_HTML):
     methods = methods or config.RS_METHODS
@@ -158,6 +165,7 @@ def render_dashboard(prices, top_n=config.TOP_N, methods=None, rebalance_mode=No
         "holdings": holdings,
         "trades": trades,
         "signals": signals,
+        "robustness": _load_robustness_payload(),
     }
 
     html = _HTML_TEMPLATE.replace("__PAYLOAD_JSON__", json.dumps(payload))
@@ -237,6 +245,13 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .subtab{padding:6px 12px; font-family:var(--mono); font-size:11.5px; color:var(--muted); cursor:pointer; background:var(--panel2); border:1px solid var(--border); border-radius:6px;}
   .subtab.active{color:var(--bg); background:var(--teal); border-color:var(--teal);}
 
+  .note{color:var(--muted); font-size:11.5px; font-family:var(--mono); line-height:1.6; margin-bottom:14px;}
+  .placeholder{color:var(--muted); font-family:var(--mono); font-size:13px; text-align:center; padding:40px 20px;}
+  .placeholder code{background:var(--panel2); border:1px solid var(--border); padding:2px 8px; border-radius:4px; color:var(--amber);}
+  .badge{display:inline-block; padding:1px 7px; border-radius:10px; font-size:10px; font-family:var(--mono); margin-left:6px;}
+  .badge.clean{background:rgba(79,216,192,0.15); color:var(--teal);}
+  .badge.warn{background:rgba(255,123,114,0.15); color:var(--coral);}
+
   footer{text-align:center; color:var(--muted); font-family:var(--mono); font-size:11px; padding:30px; border-top:1px solid var(--border);}
   @media(max-width:700px){ main{padding:16px;} header{padding:20px 16px;} }
 </style>
@@ -253,6 +268,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <div class="tabs" id="segTabs"></div>
   <div id="segBody"></div>
+  <div id="robustnessBody" style="display:none;"></div>
 
   <div class="panel">
     <h3>Method Comparison Summary</h3>
@@ -378,10 +394,26 @@ DATA.segments.forEach((seg,i)=>{
   const t = document.createElement('div');
   t.className = 'tab' + (i===0?' active':'');
   t.textContent = seg.label;
-  t.onclick = ()=>renderSeg(i);
+  t.onclick = ()=>{
+    document.getElementById('segBody').style.display = '';
+    document.getElementById('robustnessBody').style.display = 'none';
+    renderSeg(i);
+  };
   tabsEl.appendChild(t);
 });
 renderSeg(0);
+
+const robTab = document.createElement('div');
+robTab.className = 'tab comparison-tab';
+robTab.textContent = 'Robustness & Curve-Fit Checks';
+robTab.onclick = ()=>{
+  [...tabsEl.children].forEach(t=>t.classList.remove('active'));
+  robTab.classList.add('active');
+  document.getElementById('segBody').style.display = 'none';
+  document.getElementById('robustnessBody').style.display = '';
+  renderRobustness();
+};
+tabsEl.appendChild(robTab);
 
 // ============================================================
 // Comparison summary table
@@ -451,6 +483,172 @@ buildSubtabs('tradeSubtabs', (method)=>{
   tt.innerHTML = '<tr><th>Date</th><th>Action</th><th>Ticker</th><th>Name</th><th>Units</th><th>Price</th><th>Gross</th><th>Cost</th></tr>' +
     DATA.trades[method].map(r=>`<tr><td>${r.date}</td><td class="${r.action==='BUY'?'buy':'sell'}">${r.action}</td><td>${r.ticker}</td><td>${r.name}</td><td>${fmtNum(r.units)}</td><td>${r.price}</td><td>${fmtNum(r.gross)}</td><td>${r.cost}</td></tr>`).join('');
 });
+
+// ============================================================
+// Robustness & curve-fit-avoidance tab
+// ============================================================
+let robCharts = [];
+let robRendered = false;
+
+function renderRobustness(){
+  const el = document.getElementById('robustnessBody');
+  const R = DATA.robustness;
+
+  if (!R){
+    el.innerHTML = `<div class="panel"><div class="placeholder">
+      Robustness suite hasn't been generated yet.<br><br>
+      Run <code>python scripts/run_robustness.py</code> locally, or trigger the
+      <code>Robustness Sweep</code> GitHub Actions workflow, then refresh this page.
+      </div></div>`;
+    return;
+  }
+
+  if (robRendered){ return; }  // charts only need to be built once; data doesn't change on tab toggle
+  robRendered = true;
+  robCharts.forEach(c=>c.destroy()); robCharts=[];
+
+  const methods = Object.keys(R.best_full_period_config);
+  const pctCols = ['5','25','50','75','95'];
+
+  // ---- A. Lookback stability sweep ----
+  let html = `<div class="panel">
+    <h3>Lookback Stability Sweep (${R.lookback_sweep_range[0]}\u2013${R.lookback_sweep_range[1]} days, step ${R.lookback_sweep_range[2]})</h3>
+    <div class="note">A real edge shows a smooth hill in Sharpe/CAGR vs. lookback. A spike at one specific
+    value with noise on either side is a sign of curve-fitting to that value, not a genuine signal.</div>
+    <div class="method-cols">
+      <div class="chart-wrap"><canvas id="sweepSharpeChart"></canvas></div>
+      <div class="chart-wrap"><canvas id="sweepCagrChart"></canvas></div>
+    </div>
+  </div>`;
+
+  // ---- B. Walk-forward validation ----
+  html += `<div class="panel"><h3>Walk-Forward Validation</h3>
+    <div class="note">Best lookback chosen using ONLY 2018\u20132022 (train). That exact, unchanged config is then
+    tested \u2014 without re-tuning \u2014 on 2023\u20132024, 2025, and 2026 YTD.</div>`;
+  methods.forEach(method=>{
+    const wf = R.walk_forward[method];
+    const meta = METHOD_META[method];
+    html += `<div class="method-head" style="margin-top:10px;"><span class="dot" style="background:${meta.color}"></span>${meta.name}
+      \u2014 locked lookback: <b style="color:${meta.color}">${wf.locked_lookback}d</b> (train Sharpe ${wf.train_sharpe ?? '\u2014'}, window ${wf.train_window[0]} to ${wf.train_window[1]})</div>
+    <table><tr><th>Test Period</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th><th>Calmar</th><th>Trades</th></tr>`;
+    for (const [label, m] of Object.entries(wf.test_results)){
+      html += `<tr><td>${label}</td><td>${fmtPct(m.cagr_pct)}</td><td>${fmtPct(m.max_drawdown_pct)}</td><td>${m.sharpe ?? '\u2014'}</td><td>${m.calmar ?? '\u2014'}</td><td>${fmtNum(m.num_trades)}</td></tr>`;
+    }
+    html += `</table>`;
+  });
+  html += `</div>`;
+
+  // ---- C. Regime-split ----
+  html += `<div class="panel"><h3>Regime-Split Performance (locked lookback per method)</h3>
+    <div class="note">Same locked config as the walk-forward test, broken out by broad NSE market regime, so a method
+    that only works in trending markets can't hide behind a good blended average.</div>
+    <table><tr><th>Regime</th>${methods.map(m=>`<th>${METHOD_META[m].name} CAGR</th><th>${METHOD_META[m].name} Max DD</th>`).join('')}</tr>`;
+  const regimeLabels = {
+    "2018_choppy": "2018 (choppy/correction)", "2019_sideways": "2019 (sideways)",
+    "2020_2021_bull": "2020\u20132021 (COVID crash + bull)", "2022_bear_choppy": "2022 (bear/choppy)",
+    "2023_2024_bull": "2023\u20132024 (bull/grind-up)"
+  };
+  Object.keys(regimeLabels).forEach(rk=>{
+    html += `<tr><td>${regimeLabels[rk]}</td>`;
+    methods.forEach(method=>{
+      const m = R.regime_split[method].regimes[rk];
+      html += `<td>${fmtPct(m.cagr_pct)}</td><td>${fmtPct(m.max_drawdown_pct)}</td>`;
+    });
+    html += `</tr>`;
+  });
+  html += `</table></div>`;
+
+  // ---- D. Bootstrap resampling ----
+  html += `<div class="panel"><h3>Bootstrap Resampling (1000x, trades resampled with replacement)</h3>
+    <div class="note">Distribution of outcomes if the SAME per-trade returns had occurred in a resampled order/mix,
+    for the best full-period lookback per method. If the 5th-percentile is near or below zero, the edge may not be
+    statistically robust \u2014 it could be a good draw rather than a good strategy.</div>`;
+  methods.forEach(method=>{
+    const b = R.bootstrap[method];
+    const meta = METHOD_META[method];
+    if (!b){ html += `<div class="note">${meta.name}: no trades to resample.</div>`; return; }
+    html += `<div class="method-head"><span class="dot" style="background:${meta.color}"></span>${meta.name} \u2014 ${b.n_trades} round-trip trades, best full-period lookback ${R.best_full_period_config[method].best_lookback_full_period}d</div>
+    <table><tr><th>Percentile</th>${pctCols.map(p=>`<th>P${p}</th>`).join('')}</tr>
+      <tr><td>Mean trade return</td>${pctCols.map(p=>`<td>${fmtPct(b.mean_return_pct[p])}</td>`).join('')}</tr>
+      <tr><td>Sharpe-like</td>${pctCols.map(p=>`<td>${b.sharpe_like[p]}</td>`).join('')}</tr>
+      <tr><td>Total compounded return</td>${pctCols.map(p=>`<td>${fmtPct(b.total_compounded_return_pct[p])}</td>`).join('')}</tr>
+    </table>`;
+  });
+  html += `</div>`;
+
+  // ---- E. Trade-order shuffle test ----
+  html += `<div class="panel"><h3>Trade-Order Shuffle Test (500x, same trades reordered)</h3>
+    <div class="note">Same trades, randomly reordered \u2014 total return is necessarily identical across shuffles
+    (it's the same multiset of returns compounded), but Max Drawdown and Calmar are path-dependent. Wide spread means
+    the headline drawdown number owes a lot to when winners/losers happened to land, not just the strategy itself.</div>`;
+  methods.forEach(method=>{
+    const s = R.shuffle_test[method];
+    const meta = METHOD_META[method];
+    if (!s){ html += `<div class="note">${meta.name}: no trades to shuffle.</div>`; return; }
+    html += `<div class="method-head"><span class="dot" style="background:${meta.color}"></span>${meta.name}</div>
+    <table><tr><th>Percentile</th>${pctCols.map(p=>`<th>P${p}</th>`).join('')}</tr>
+      <tr><td>Max Drawdown</td>${pctCols.map(p=>`<td>${fmtPct(s.max_dd_pct[p])}</td>`).join('')}</tr>
+      <tr><td>Calmar-like</td>${pctCols.map(p=>`<td>${s.calmar_like ? s.calmar_like[p] : '\u2014'}</td>`).join('')}</tr>
+    </table>`;
+  });
+  html += `</div>`;
+
+  // ---- F. Data quality ----
+  const dq = R.data_quality;
+  const invIssues = R.portfolio_invariant_issues || [];
+  html += `<div class="panel"><h3>Data Quality &amp; Portfolio Invariant Checks
+    ${invIssues.length===0 ? '<span class="badge clean">clean</span>' : `<span class="badge warn">${invIssues.length} issue(s)</span>`}
+    </h3>
+    <div class="note">Flags any single-day price move &gt;${dq.suspicious_moves_threshold_pct}% (ETFs essentially never move
+    this much in one session under normal conditions \u2014 could be a stale/bad tick or an unadjusted corporate action,
+    worth checking against actual NSE data before trusting numbers near it) and independently re-verifies that equity
+    never went negative or NaN anywhere in the best-lookback runs.</div>`;
+  if (dq.n_flags === 0){
+    html += `<div class="note">No suspicious single-day moves &gt;${dq.suspicious_moves_threshold_pct}% found across the universe.</div>`;
+  } else {
+    html += `<table><tr><th>Ticker</th><th>Date</th><th>Prev Price</th><th>Price</th><th>Move</th></tr>` +
+      dq.flags.map(f=>`<tr><td>${f.ticker}</td><td>${f.date}</td><td>${f.prev_price ?? '\u2014'}</td><td>${f.price}</td><td>${fmtPct(f.pct_move)}</td></tr>`).join('') +
+      `</table>`;
+  }
+  if (invIssues.length > 0){
+    html += `<table style="margin-top:10px;"><tr><th>Type</th><th>Method</th><th>Lookback</th><th>Count</th><th>Detail</th></tr>` +
+      invIssues.map(i=>`<tr><td>${i.type}</td><td>${i.method}</td><td>${i.lookback}</td><td>${i.count}</td><td>${JSON.stringify(i)}</td></tr>`).join('') +
+      `</table>`;
+  }
+  html += `</div>`;
+
+  el.innerHTML = html;
+
+  // ---- Charts for section A ----
+  const sweepByMethod = {};
+  methods.forEach(m => sweepByMethod[m] = R.sweep.filter(r=>r.method===m).sort((a,b)=>a.lookback-b.lookback));
+  const lookbackLabels = sweepByMethod[methods[0]].map(r=>r.lookback);
+
+  robCharts.push(new Chart(document.getElementById('sweepSharpeChart'), {
+    type:'line',
+    data:{ labels: lookbackLabels, datasets: methods.map(m=>({
+      label: METHOD_META[m].name + ' Sharpe', data: sweepByMethod[m].map(r=>r.sharpe),
+      borderColor: METHOD_META[m].color, backgroundColor:'transparent', fill:false, pointRadius:2, borderWidth:1.6, tension:0.25
+    })) },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{labels:{color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}}, title:{display:true, text:'Sharpe vs. Lookback (days)', color:'#8A97A6', font:{family:'IBM Plex Mono', size:11}} },
+      scales:{ x:{ title:{display:true, text:'lookback (days)', color:'#8A97A6'}, ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}},
+               y:{ ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}}}
+  }));
+
+  robCharts.push(new Chart(document.getElementById('sweepCagrChart'), {
+    type:'line',
+    data:{ labels: lookbackLabels, datasets: methods.map(m=>({
+      label: METHOD_META[m].name + ' CAGR %', data: sweepByMethod[m].map(r=>r.cagr_pct),
+      borderColor: METHOD_META[m].color, backgroundColor:'transparent', fill:false, pointRadius:2, borderWidth:1.6, tension:0.25
+    })) },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{labels:{color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}}, title:{display:true, text:'CAGR % vs. Lookback (days)', color:'#8A97A6', font:{family:'IBM Plex Mono', size:11}} },
+      scales:{ x:{ title:{display:true, text:'lookback (days)', color:'#8A97A6'}, ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}},
+               y:{ ticks:{ color:'#8A97A6', font:{family:'IBM Plex Mono', size:10}}, grid:{color:'#1B222C'}}}}
+  }));
+}
+
 </script>
 </body>
 </html>
