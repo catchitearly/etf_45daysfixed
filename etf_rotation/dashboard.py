@@ -601,23 +601,66 @@ function renderRobustness(){
   const dq = R.data_quality;
   const invIssues = R.portfolio_invariant_issues || [];
   html += `<div class="panel"><h3>Data Quality &amp; Portfolio Invariant Checks
-    ${invIssues.length===0 ? '<span class="badge clean">clean</span>' : `<span class="badge warn">${invIssues.length} issue(s)</span>`}
+    ${invIssues.length===0 ? '<span class="badge clean">clean</span>' : `<span class="badge warn">${invIssues.length} issue(s) across all ${R.sweep.length} sweep runs</span>`}
     </h3>
-    <div class="note">Flags any single-day price move &gt;${dq.suspicious_moves_threshold_pct}% (ETFs essentially never move
-    this much in one session under normal conditions \u2014 could be a stale/bad tick or an unadjusted corporate action,
-    worth checking against actual NSE data before trusting numbers near it) and independently re-verifies that equity
-    never went negative or NaN anywhere in the best-lookback runs.</div>`;
-  if (dq.n_flags === 0){
-    html += `<div class="note">No suspicious single-day moves &gt;${dq.suspicious_moves_threshold_pct}% found across the universe.</div>`;
+    <div class="note">Two independent checks: (1) single-day moves &gt;${dq.single_day_threshold_pct}% (ETFs essentially never
+    move this much in one session \u2014 could be a stale/bad tick or unadjusted corporate action) and (2) gradual
+    ${dq.multiday_windows.join('/')}-day cumulative drift &gt;${dq.multiday_threshold_pct}% (catches a bad tick that single-day
+    checks miss entirely because it built up over several smaller moves). Portfolio invariants (equity never negative/NaN)
+    are re-verified across ALL ${R.sweep.length} sweep runs, not just the best-Sharpe ones.
+    Full uncapped flag list: <code>${dq.flags_csv_path}</code></div>`;
+
+  html += `<div class="method-head" style="margin-top:6px;">Single-day flags (${dq.n_single_day_flags} total${dq.n_single_day_flags>100?', showing first 100':''})</div>`;
+  if (dq.n_single_day_flags === 0){
+    html += `<div class="note">None found.</div>`;
   } else {
     html += `<table><tr><th>Ticker</th><th>Date</th><th>Prev Price</th><th>Price</th><th>Move</th></tr>` +
-      dq.flags.map(f=>`<tr><td>${f.ticker}</td><td>${f.date}</td><td>${f.prev_price ?? '\u2014'}</td><td>${f.price}</td><td>${fmtPct(f.pct_move)}</td></tr>`).join('') +
+      dq.single_day_flags.map(f=>`<tr><td>${f.ticker}</td><td>${f.date}</td><td>${f.prev_price ?? '\u2014'}</td><td>${f.price}</td><td>${fmtPct(f.pct_move)}</td></tr>`).join('') +
       `</table>`;
   }
+
+  html += `<div class="method-head" style="margin-top:14px;">Multi-day drift flags (${dq.n_multiday_flags} total${dq.n_multiday_flags>100?', showing first 100':''})</div>`;
+  if (dq.n_multiday_flags === 0){
+    html += `<div class="note">None found.</div>`;
+  } else {
+    html += `<table><tr><th>Ticker</th><th>Window</th><th>Start</th><th>End</th><th>Start Price</th><th>End Price</th><th>Cum. Move</th></tr>` +
+      dq.multiday_flags.map(f=>`<tr><td>${f.ticker}</td><td>${f.window_days}d</td><td>${f.start_date}</td><td>${f.end_date}</td><td>${f.start_price}</td><td>${f.end_price}</td><td>${fmtPct(f.cum_pct_move)}</td></tr>`).join('') +
+      `</table>`;
+  }
+
   if (invIssues.length > 0){
-    html += `<table style="margin-top:10px;"><tr><th>Type</th><th>Method</th><th>Lookback</th><th>Count</th><th>Detail</th></tr>` +
+    html += `<div class="method-head" style="margin-top:14px;">Portfolio invariant violations</div>
+      <table><tr><th>Type</th><th>Method</th><th>Lookback</th><th>Count</th><th>Detail</th></tr>` +
       invIssues.map(i=>`<tr><td>${i.type}</td><td>${i.method}</td><td>${i.lookback}</td><td>${i.count}</td><td>${JSON.stringify(i)}</td></tr>`).join('') +
       `</table>`;
+  }
+  html += `</div>`;
+
+  // ---- G. Catastrophic runs (auto-dumped) ----
+  const catRuns = R.catastrophic_runs || [];
+  html += `<div class="panel"><h3>Catastrophic Runs (Auto-Detected)
+    ${catRuns.length===0 ? '<span class="badge clean">none found</span>' : `<span class="badge warn">${catRuns.length} run(s)</span>`}
+    </h3>
+    <div class="note">Any sweep run whose max drawdown breached ${R.catastrophic_dd_threshold_pct}% \u2014 the kind of
+    result that shouldn't happen for an unlevered whole-unit ETF portfolio and is a strong sign of a bad tick under that
+    specific run \u2014 has its FULL trade log and worst round-trip trades auto-dumped to disk immediately, not just the
+    best-Sharpe lookback kept for other steps. Worst trades for each are shown inline below; open the CSV paths for the
+    complete trade-by-trade detail.</div>`;
+  if (catRuns.length === 0){
+    html += `<div class="note">No sweep run breached the threshold.</div>`;
+  } else {
+    catRuns.forEach(c=>{
+      const meta = METHOD_META[c.method];
+      html += `<div class="method-head" style="margin-top:10px;"><span class="dot" style="background:${meta.color}"></span>${meta.name}
+        lookback=${c.lookback}d \u2014 max DD <span class="neg">${fmtPct(c.max_drawdown_pct)}</span>,
+        total return ${fmtPct(c.total_return_pct)}, ${c.n_trades_return_below_neg50pct} trade(s) with return &lt; -50%</div>
+        <div class="note">Full trade log: <code>${c.trade_log_csv}</code> &middot; Worst trades: <code>${c.worst_trades_csv}</code></div>`;
+      if (c.worst_trades && c.worst_trades.length > 0){
+        html += `<table><tr><th>Ticker</th><th>Entry</th><th>Exit</th><th>Holding Days</th><th>Entry Price</th><th>Exit Price</th><th>Return</th></tr>` +
+          c.worst_trades.map(t=>`<tr><td>${t.ticker}</td><td>${t.entry_date}</td><td>${t.exit_date}</td><td>${t.holding_days}</td><td>${t.entry_price}</td><td>${t.exit_price}</td><td>${fmtPct(t.return_pct)}</td></tr>`).join('') +
+          `</table>`;
+      }
+    });
   }
   html += `</div>`;
 

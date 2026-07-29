@@ -100,3 +100,15 @@ TRADE_LOG_CSV = os.path.join(DATA_DIR, "trade_log.csv")
 EQUITY_CSV = os.path.join(DATA_DIR, "equity_curve.csv")
 SIGNAL_JSON = os.path.join(DATA_DIR, "latest_signal.json")
 ROBUSTNESS_JSON = os.path.join(DATA_DIR, "robustness.json")
+
+# Any sweep run whose max drawdown breaches this gets its full trade log and
+# worst round-trip trades auto-dumped to disk for manual inspection -- see
+# etf_rotation/robustness.py: dump_catastrophic_run().
+CATASTROPHIC_DD_THRESHOLD_PCT = -80.0
+CATASTROPHIC_RUNS_DIR = os.path.join(DATA_DIR, "catastrophic_runs")
+DATA_QUALITY_FLAGS_CSV = os.path.join(DATA_DIR, "data_quality_flags.csv")
+
+# Multi-day cumulative move detection windows/threshold -- catches gradual
+# bad-tick drift that a single-day-only check misses entirely.
+MULTIDAY_WINDOWS = (3, 5, 10)
+MULTIDAY_MOVE_THRESHOLD = 0.25

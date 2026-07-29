@@ -21,7 +21,7 @@ from etf_rotation.robustness import (
     run_lookback_sweep, walk_forward_validate, regime_split_metrics,
     extract_round_trip_trades, bootstrap_trade_distribution, shuffle_order_test,
 )
-from etf_rotation.data_quality import flag_suspicious_moves, check_portfolio_invariants
+from etf_rotation.data_quality import flag_suspicious_moves, flag_multiday_moves, dump_flags_csv
 
 
 def main():
@@ -43,30 +43,49 @@ def main():
     cache_path = config.PRICE_CACHE_FYERS if config.DATA_SOURCE == "fyers" else config.PRICE_CACHE
     print(f"[robustness] (cache file: {cache_path})")
 
-    # -- 0. Data quality pass --------------------------------------------
-    print("[robustness] checking for suspicious price ticks ...")
-    suspicious = flag_suspicious_moves(prices, threshold=0.20)
-    print(f"[robustness]   {len(suspicious)} single-day moves > 20% flagged")
+    # -- 0. Data quality pass ---------------------------------------------
+    print("[robustness] checking for suspicious price ticks (single-day) ...")
+    single_day_flags = flag_suspicious_moves(prices, threshold=0.20)
+    print(f"[robustness]   {len(single_day_flags)} single-day moves > 20% flagged")
+
+    print(f"[robustness] checking for gradual/multi-day drift ({config.MULTIDAY_WINDOWS}-day windows, "
+          f"{config.MULTIDAY_MOVE_THRESHOLD*100:.0f}% threshold) -- catches bad ticks a single-day check misses ...")
+    multiday_flags = flag_multiday_moves(prices)
+    print(f"[robustness]   {len(multiday_flags)} multi-day cumulative moves flagged")
+
+    all_flags_for_csv = (
+        [{"check": "single_day", **f} for f in single_day_flags]
+        + [{"check": "multi_day", **f} for f in multiday_flags]
+    )
+    flags_csv_path = dump_flags_csv(all_flags_for_csv, config.DATA_QUALITY_FLAGS_CSV)
+    print(f"[robustness]   full flag list ({len(all_flags_for_csv)} rows) dumped to {flags_csv_path}")
 
     # -- 1. Full-period lookback stability sweep --------------------------
     print(f"[robustness] running lookback sweep {config.LOOKBACK_SWEEP[0]}-{config.LOOKBACK_SWEEP[-1]} "
           f"step 5, both methods, full period {config.BACKTEST_START}..{end_date} ...")
-    sweep_df, best_full_period = run_lookback_sweep(
+    print(f"[robustness] any run with max drawdown worse than {config.CATASTROPHIC_DD_THRESHOLD_PCT}% "
+          f"will have its full trade log + worst trades auto-dumped to {config.CATASTROPHIC_RUNS_DIR}/")
+    sweep_df, best_full_period, invariant_issues, catastrophic_runs = run_lookback_sweep(
         prices, start=config.BACKTEST_START, end=end_date,
     )
-    print("[robustness]   done:", len(sweep_df), "runs")
+    print("[robustness]   done:", len(sweep_df), "runs (invariants re-checked on ALL of them, not just the best)")
 
-    invariant_issues = []
-    for method, (sharpe, lb, result) in best_full_period.items():
-        issues = check_portfolio_invariants(result["equity_curve"])
-        for i in issues:
-            i["method"] = method
-            i["lookback"] = lb
-        invariant_issues.extend(issues)
     if invariant_issues:
         print(f"[robustness]   WARNING: {len(invariant_issues)} portfolio invariant violations found!")
+        for iss in invariant_issues:
+            print(f"[robustness]     {iss}")
     else:
-        print("[robustness]   portfolio invariants clean (no negative/NaN equity in best-lookback runs)")
+        print("[robustness]   portfolio invariants clean across all 32 sweep runs")
+
+    if catastrophic_runs:
+        print(f"[robustness]   WARNING: {len(catastrophic_runs)} run(s) breached the "
+              f"{config.CATASTROPHIC_DD_THRESHOLD_PCT}% drawdown threshold -- auto-dumped for inspection:")
+        for c in catastrophic_runs:
+            print(f"[robustness]     {c['method']} lookback={c['lookback']}: "
+                  f"max_dd={c['max_drawdown_pct']}%, {c['n_trades_return_below_neg50pct']} trades "
+                  f"with return < -50%, dumped to {c['trade_log_csv']} and {c['worst_trades_csv']}")
+    else:
+        print(f"[robustness]   no runs breached the {config.CATASTROPHIC_DD_THRESHOLD_PCT}% drawdown threshold")
 
     # -- 2. Walk-forward validation (train 2018-2022, test unseen) --------
     print("[robustness] running walk-forward validation (train 2018-2022, lock, test 2023-24/2025/2026) ...")
@@ -105,12 +124,19 @@ def main():
         "lookback_sweep_range": [config.LOOKBACK_SWEEP[0], config.LOOKBACK_SWEEP[-1], 5],
         "top_n": config.TOP_N,
         "rebalance_mode": config.REBALANCE_MODE,
+        "catastrophic_dd_threshold_pct": config.CATASTROPHIC_DD_THRESHOLD_PCT,
         "data_quality": {
-            "suspicious_moves_threshold_pct": 20,
-            "flags": suspicious[:100],  # cap payload size
-            "n_flags": len(suspicious),
+            "single_day_threshold_pct": 20,
+            "multiday_windows": list(config.MULTIDAY_WINDOWS),
+            "multiday_threshold_pct": config.MULTIDAY_MOVE_THRESHOLD * 100,
+            "single_day_flags": single_day_flags[:100],   # capped for dashboard payload size
+            "multiday_flags": multiday_flags[:100],
+            "n_single_day_flags": len(single_day_flags),
+            "n_multiday_flags": len(multiday_flags),
+            "flags_csv_path": flags_csv_path,
         },
         "portfolio_invariant_issues": invariant_issues,
+        "catastrophic_runs": catastrophic_runs,
         "sweep": sweep_df.to_dict(orient="records"),
         "best_full_period_config": best_config_summary,
         "walk_forward": {

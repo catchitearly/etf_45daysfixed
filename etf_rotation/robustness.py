@@ -28,11 +28,14 @@ mechanics (long-only, whole-unit, cash-settled, no shorts/no F&O):
      swings wildly with the order, the risk profile is largely
      luck-of-sequencing rather than a property of the strategy.
 """
+import os
+
 import numpy as np
 import pandas as pd
 
 from . import config
 from .backtest import run_backtest, compute_metrics
+from .data_quality import check_portfolio_invariants
 
 
 # ---------------------------------------------------------------------------
@@ -40,13 +43,30 @@ from .backtest import run_backtest, compute_metrics
 # ---------------------------------------------------------------------------
 def run_lookback_sweep(prices, methods=None, lookbacks=None, top_n=config.TOP_N,
                         rebalance_mode=None, start=config.BACKTEST_START, end=None,
-                        initial_capital=config.INITIAL_CAPITAL):
+                        initial_capital=config.INITIAL_CAPITAL,
+                        catastrophic_dd_threshold=config.CATASTROPHIC_DD_THRESHOLD_PCT):
     """
     Runs every (method, lookback) combination as an independent simulation
-    over [start, end]. Returns (sweep_df, best_result) where best_result is
-    {method: (sharpe, lookback, full_backtest_result)} for the highest-Sharpe
-    lookback found per method (kept so callers can extract its trade log for
-    the bootstrap/shuffle tests below without re-running anything).
+    over [start, end].
+
+    For EVERY run (not just the best one per method) this:
+      - re-checks the portfolio-invariant assertions (equity never negative/
+        NaN) independently of the real-time asserts in Portfolio itself
+      - if max drawdown breaches `catastrophic_dd_threshold` (e.g. a run
+        that lost >80% when neighboring lookbacks lost <20%), immediately
+        dumps its full trade log + worst round-trip trades to disk via
+        dump_catastrophic_run(), so nothing anomalous can pass through
+        silently just because it wasn't the "best" run kept for later steps.
+
+    Returns (sweep_df, best_result, invariant_issues, catastrophic_runs):
+      - best_result: {method: (sharpe, lookback, full_backtest_result)} for
+        the highest-Sharpe lookback per method (kept for the bootstrap/
+        shuffle tests below, without re-running anything).
+      - invariant_issues: list of violation dicts across ALL 32 runs, each
+        tagged with method/lookback.
+      - catastrophic_runs: list of summary dicts (one per run that breached
+        the drawdown threshold), including paths to the dumped CSVs and the
+        worst trades inline for direct dashboard display.
     """
     methods = methods or config.RS_METHODS
     lookbacks = lookbacks or config.LOOKBACK_SWEEP
@@ -54,6 +74,9 @@ def run_lookback_sweep(prices, methods=None, lookbacks=None, top_n=config.TOP_N,
 
     rows = []
     best = {}
+    invariant_issues = []
+    catastrophic_runs = []
+
     for method in methods:
         for lb in lookbacks:
             result = run_backtest(
@@ -63,12 +86,71 @@ def run_lookback_sweep(prices, methods=None, lookbacks=None, top_n=config.TOP_N,
             metrics = compute_metrics(result["equity_curve"], result["trade_log"])
             rows.append({"method": method, "lookback": lb, **metrics})
 
+            issues = check_portfolio_invariants(result["equity_curve"])
+            for iss in issues:
+                iss["method"] = method
+                iss["lookback"] = lb
+            invariant_issues.extend(issues)
+
+            max_dd = metrics.get("max_drawdown_pct")
+            if max_dd is not None and max_dd < catastrophic_dd_threshold:
+                summary = dump_catastrophic_run(method, lb, result, metrics)
+                catastrophic_runs.append(summary)
+
             sharpe = metrics.get("sharpe")
             sharpe_val = sharpe if sharpe is not None else -999
             if method not in best or sharpe_val > best[method][0]:
                 best[method] = (sharpe_val, lb, result)
 
-    return pd.DataFrame(rows), best
+    return pd.DataFrame(rows), best, invariant_issues, catastrophic_runs
+
+
+def dump_catastrophic_run(method: str, lookback: int, result: dict, metrics: dict,
+                           out_dir=None, n_worst=15):
+    """
+    For a sweep run whose drawdown breached the catastrophic threshold:
+    dumps its FULL trade log and its worst N round-trip trades to CSV for
+    manual inspection, and returns a JSON-friendly summary (including the
+    worst trades inline, so the dashboard can show them without needing to
+    open a CSV).
+    """
+    out_dir = out_dir or config.CATASTROPHIC_RUNS_DIR
+    os.makedirs(out_dir, exist_ok=True)
+
+    tag = f"{method}_lb{lookback}"
+    trade_log_path = os.path.join(out_dir, f"{tag}_full_tradelog.csv")
+    worst_trades_path = os.path.join(out_dir, f"{tag}_worst_trades.csv")
+
+    trade_log = result["trade_log"]
+    if trade_log is not None and len(trade_log) > 0:
+        trade_log.to_csv(trade_log_path, index=False)
+    else:
+        pd.DataFrame(columns=["date", "action", "ticker", "units", "price", "gross", "cost"]).to_csv(trade_log_path, index=False)
+
+    round_trips = extract_round_trip_trades(trade_log)
+    if len(round_trips) > 0:
+        worst = round_trips.sort_values("return_pct", ascending=True).head(n_worst)
+        worst.to_csv(worst_trades_path, index=False)
+        worst_records = worst.to_dict(orient="records")
+        n_extreme = int((round_trips["return_pct"] < -50).sum())
+    else:
+        pd.DataFrame(columns=["ticker", "entry_date", "exit_date", "holding_days",
+                               "entry_price", "exit_price", "return_pct"]).to_csv(worst_trades_path, index=False)
+        worst_records = []
+        n_extreme = 0
+
+    return {
+        "method": method,
+        "lookback": lookback,
+        "max_drawdown_pct": metrics.get("max_drawdown_pct"),
+        "cagr_pct": metrics.get("cagr_pct"),
+        "total_return_pct": metrics.get("total_return_pct"),
+        "n_round_trip_trades": int(len(round_trips)),
+        "n_trades_return_below_neg50pct": n_extreme,
+        "trade_log_csv": trade_log_path,
+        "worst_trades_csv": worst_trades_path,
+        "worst_trades": worst_records,
+    }
 
 
 # ---------------------------------------------------------------------------

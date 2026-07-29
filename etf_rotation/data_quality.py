@@ -10,7 +10,10 @@ This is diagnostic only: it does not modify the price data or the backtest,
 it just surfaces a list of dates/tickers worth eyeballing against the
 actual NSE data before trusting the numbers around them.
 """
+import os
 import pandas as pd
+
+from . import config
 
 
 def flag_suspicious_moves(prices: pd.DataFrame, threshold: float = 0.20):
@@ -43,6 +46,66 @@ def flag_suspicious_moves(prices: pd.DataFrame, threshold: float = 0.20):
             })
     flags.sort(key=lambda f: -abs(f["pct_move"]))
     return flags
+
+
+def flag_multiday_moves(prices: pd.DataFrame, windows=None, threshold: float = None):
+    """
+    Catches the failure mode a single-day check MISSES ENTIRELY: a price
+    that drifts to a bad level over several small daily moves (each under
+    the single-day threshold) rather than one dramatic jump. For each
+    window in `windows` (trading days), flags any |N-day cumulative move|
+    exceeding `threshold`.
+
+    Deliberately NOT deduplicated against single-day flags -- a genuine
+    single-day 900% jump will also show up here trivially (any window
+    containing it exceeds threshold too), which is fine: the two checks are
+    independent evidence, and seeing both fire on the same date/ticker is
+    itself a useful corroborating signal.
+    """
+    windows = windows or config.MULTIDAY_WINDOWS
+    threshold = threshold if threshold is not None else config.MULTIDAY_MOVE_THRESHOLD
+
+    flags = []
+    for col in prices.columns:
+        s = prices[col].dropna()
+        if len(s) < 2:
+            continue
+        for w in windows:
+            if len(s) <= w:
+                continue
+            cum_move = s.pct_change(periods=w)
+            hits = cum_move[cum_move.abs() > threshold]
+            for dt_end, move in hits.items():
+                idx = s.index.get_loc(dt_end)
+                idx_start = idx - w
+                if idx_start < 0:
+                    continue
+                dt_start = s.index[idx_start]
+                flags.append({
+                    "ticker": col,
+                    "window_days": w,
+                    "start_date": str(dt_start.date()),
+                    "end_date": str(dt_end.date()),
+                    "start_price": round(float(s.loc[dt_start]), 2),
+                    "end_price": round(float(s.loc[dt_end]), 2),
+                    "cum_pct_move": round(float(move) * 100, 2),
+                })
+    flags.sort(key=lambda f: -abs(f["cum_pct_move"]))
+    return flags
+
+
+def dump_flags_csv(flags, path):
+    """
+    Writes the FULL (uncapped) list of flagged moves to a CSV file for
+    manual audit -- unlike embedding in the dashboard JSON, which is capped
+    to keep the page size reasonable, this file has everything.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if flags:
+        pd.DataFrame(flags).to_csv(path, index=False)
+    else:
+        pd.DataFrame(columns=["ticker", "date", "prev_date", "prev_price", "price", "pct_move"]).to_csv(path, index=False)
+    return path
 
 
 def check_portfolio_invariants(equity_curve: pd.DataFrame):
