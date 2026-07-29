@@ -8,12 +8,1009 @@
   ],
   "top_n": 3,
   "rebalance_mode": "full_liquidate",
+  "catastrophic_dd_threshold_pct": -80.0,
   "data_quality": {
-    "suspicious_moves_threshold_pct": 20,
-    "flags": [],
-    "n_flags": 0
+    "single_day_threshold_pct": 20,
+    "multiday_windows": [
+      3,
+      5,
+      10
+    ],
+    "multiday_threshold_pct": 25.0,
+    "single_day_flags": [],
+    "multiday_flags": [
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 10,
+        "start_date": "2024-09-20",
+        "end_date": "2024-10-07",
+        "start_price": 286.2,
+        "end_price": 409.58,
+        "cum_pct_move": 43.11
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-13",
+        "end_date": "2026-01-29",
+        "start_price": 249.51,
+        "end_price": 351.91,
+        "cum_pct_move": 41.04
+      },
+      {
+        "ticker": "BANKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-06",
+        "end_date": "2020-03-23",
+        "start_price": 284.77,
+        "end_price": 174.78,
+        "cum_pct_move": -38.62
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 10,
+        "start_date": "2024-09-18",
+        "end_date": "2024-10-03",
+        "start_price": 281.34,
+        "end_price": 389.08,
+        "cum_pct_move": 38.3
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-09",
+        "end_date": "2026-01-27",
+        "start_price": 230.37,
+        "end_price": 317.85,
+        "cum_pct_move": 37.97
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 10,
+        "start_date": "2024-09-19",
+        "end_date": "2024-10-04",
+        "start_price": 283.84,
+        "end_price": 390.52,
+        "cum_pct_move": 37.58
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 3,
+        "start_date": "2026-01-29",
+        "end_date": "2026-02-02",
+        "start_price": 351.91,
+        "end_price": 219.94,
+        "cum_pct_move": -37.5
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-12",
+        "end_date": "2026-01-28",
+        "start_price": 243.35,
+        "end_price": 332.03,
+        "cum_pct_move": 36.44
+      },
+      {
+        "ticker": "BANKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-09",
+        "end_date": "2020-03-24",
+        "start_price": 271.61,
+        "end_price": 174.05,
+        "cum_pct_move": -35.92
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2017-10-23",
+        "end_date": "2017-11-06",
+        "start_price": 33.1,
+        "end_price": 44.59,
+        "cum_pct_move": 34.71
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 10,
+        "start_date": "2024-09-17",
+        "end_date": "2024-10-01",
+        "start_price": 282.67,
+        "end_price": 380.77,
+        "cum_pct_move": 34.7
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-06",
+        "end_date": "2026-01-21",
+        "start_price": 231.65,
+        "end_price": 310.68,
+        "cum_pct_move": 34.12
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2017-10-19",
+        "end_date": "2017-11-03",
+        "start_price": 33.11,
+        "end_price": 44.35,
+        "cum_pct_move": 33.95
+      },
+      {
+        "ticker": "MID150BEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-09",
+        "end_date": "2020-03-24",
+        "start_price": 64.53,
+        "end_price": 43.48,
+        "cum_pct_move": -32.62
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 10,
+        "start_date": "2024-09-23",
+        "end_date": "2024-10-08",
+        "start_price": 284.59,
+        "end_price": 375.99,
+        "cum_pct_move": 32.12
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-05",
+        "end_date": "2026-01-20",
+        "start_price": 225.54,
+        "end_price": 297.62,
+        "cum_pct_move": 31.96
+      },
+      {
+        "ticker": "MID150BEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-06",
+        "end_date": "2020-03-23",
+        "start_price": 61.72,
+        "end_price": 42.49,
+        "cum_pct_move": -31.16
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-08",
+        "end_date": "2026-01-23",
+        "start_price": 223.53,
+        "end_price": 292.73,
+        "cum_pct_move": 30.96
+      },
+      {
+        "ticker": "BANKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-11",
+        "end_date": "2020-03-25",
+        "start_price": 270.62,
+        "end_price": 186.86,
+        "cum_pct_move": -30.95
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 5,
+        "start_date": "2026-01-27",
+        "end_date": "2026-02-02",
+        "start_price": 317.85,
+        "end_price": 219.94,
+        "cum_pct_move": -30.8
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 5,
+        "start_date": "2017-10-23",
+        "end_date": "2017-10-30",
+        "start_price": 33.1,
+        "end_price": 43.29,
+        "cum_pct_move": 30.79
+      },
+      {
+        "ticker": "BANKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-05",
+        "end_date": "2020-03-20",
+        "start_price": 294.59,
+        "end_price": 204.25,
+        "cum_pct_move": -30.67
+      },
+      {
+        "ticker": "BANKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-04",
+        "end_date": "2020-03-19",
+        "start_price": 292.7,
+        "end_price": 203.57,
+        "cum_pct_move": -30.45
+      },
+      {
+        "ticker": "INFRABEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-04",
+        "end_date": "2020-03-19",
+        "start_price": 309.77,
+        "end_price": 215.99,
+        "cum_pct_move": -30.27
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-02-26",
+        "end_date": "2020-03-12",
+        "start_price": 23.04,
+        "end_price": 16.07,
+        "cum_pct_move": -30.25
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 10,
+        "start_date": "2024-09-16",
+        "end_date": "2024-09-30",
+        "start_price": 282.88,
+        "end_price": 367.12,
+        "cum_pct_move": 29.78
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-29",
+        "end_date": "2026-02-11",
+        "start_price": 351.91,
+        "end_price": 247.37,
+        "cum_pct_move": -29.71
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2017-10-18",
+        "end_date": "2017-11-02",
+        "start_price": 33.17,
+        "end_price": 43.0,
+        "cum_pct_move": 29.64
+      },
+      {
+        "ticker": "BANKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-03",
+        "end_date": "2020-03-18",
+        "start_price": 298.27,
+        "end_price": 210.12,
+        "cum_pct_move": -29.55
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 5,
+        "start_date": "2024-09-23",
+        "end_date": "2024-09-30",
+        "start_price": 284.59,
+        "end_price": 367.12,
+        "cum_pct_move": 29.0
+      },
+      {
+        "ticker": "NIFTYBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-06",
+        "end_date": "2020-03-23",
+        "start_price": 117.18,
+        "end_price": 83.52,
+        "cum_pct_move": -28.73
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 5,
+        "start_date": "2017-10-19",
+        "end_date": "2017-10-27",
+        "start_price": 33.11,
+        "end_price": 42.59,
+        "cum_pct_move": 28.63
+      },
+      {
+        "ticker": "MID150BEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-11",
+        "end_date": "2020-03-25",
+        "start_price": 58.66,
+        "end_price": 41.89,
+        "cum_pct_move": -28.59
+      },
+      {
+        "ticker": "MOM100.NS",
+        "window_days": 10,
+        "start_date": "2020-03-06",
+        "end_date": "2020-03-23",
+        "start_price": 17.27,
+        "end_price": 12.37,
+        "cum_pct_move": -28.37
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 5,
+        "start_date": "2024-09-24",
+        "end_date": "2024-10-01",
+        "start_price": 297.98,
+        "end_price": 380.77,
+        "cum_pct_move": 27.78
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-02",
+        "end_date": "2026-01-19",
+        "start_price": 221.87,
+        "end_price": 282.95,
+        "cum_pct_move": 27.53
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2017-10-13",
+        "end_date": "2017-10-30",
+        "start_price": 34.0,
+        "end_price": 43.29,
+        "cum_pct_move": 27.32
+      },
+      {
+        "ticker": "BANKBEES.NS",
+        "window_days": 5,
+        "start_date": "2020-03-16",
+        "end_date": "2020-03-23",
+        "start_price": 239.97,
+        "end_price": 174.78,
+        "cum_pct_move": -27.17
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2017-10-17",
+        "end_date": "2017-11-01",
+        "start_price": 34.25,
+        "end_price": 43.52,
+        "cum_pct_move": 27.07
+      },
+      {
+        "ticker": "JUNIORBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-06",
+        "end_date": "2020-03-23",
+        "start_price": 274.28,
+        "end_price": 200.42,
+        "cum_pct_move": -26.93
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-28",
+        "end_date": "2026-02-10",
+        "start_price": 332.03,
+        "end_price": 243.82,
+        "cum_pct_move": -26.57
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2017-10-12",
+        "end_date": "2017-10-27",
+        "start_price": 33.66,
+        "end_price": 42.59,
+        "cum_pct_move": 26.53
+      },
+      {
+        "ticker": "NV20BEES.NS",
+        "window_days": 10,
+        "start_date": "2020-02-26",
+        "end_date": "2020-03-12",
+        "start_price": 57.37,
+        "end_price": 42.39,
+        "cum_pct_move": -26.11
+      },
+      {
+        "ticker": "JUNIORBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-09",
+        "end_date": "2020-03-24",
+        "start_price": 269.12,
+        "end_price": 199.05,
+        "cum_pct_move": -26.04
+      },
+      {
+        "ticker": "HNGSNGBEES.NS",
+        "window_days": 5,
+        "start_date": "2024-09-25",
+        "end_date": "2024-10-03",
+        "start_price": 308.75,
+        "end_price": 389.08,
+        "cum_pct_move": 26.02
+      },
+      {
+        "ticker": "GOLDBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-13",
+        "end_date": "2026-01-29",
+        "start_price": 116.37,
+        "end_price": 146.53,
+        "cum_pct_move": 25.92
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-11-23",
+        "end_date": "2020-12-08",
+        "start_price": 16.14,
+        "end_price": 20.32,
+        "cum_pct_move": 25.9
+      },
+      {
+        "ticker": "CPSEETF.NS",
+        "window_days": 10,
+        "start_date": "2020-03-06",
+        "end_date": "2020-03-23",
+        "start_price": 18.9,
+        "end_price": 14.01,
+        "cum_pct_move": -25.87
+      },
+      {
+        "ticker": "INFRABEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-05",
+        "end_date": "2020-03-20",
+        "start_price": 310.11,
+        "end_price": 229.99,
+        "cum_pct_move": -25.84
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2017-10-24",
+        "end_date": "2017-11-07",
+        "start_price": 34.31,
+        "end_price": 43.11,
+        "cum_pct_move": 25.65
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 5,
+        "start_date": "2026-01-28",
+        "end_date": "2026-02-03",
+        "start_price": 332.03,
+        "end_price": 247.34,
+        "cum_pct_move": -25.51
+      },
+      {
+        "ticker": "CPSEETF.NS",
+        "window_days": 10,
+        "start_date": "2020-03-04",
+        "end_date": "2020-03-19",
+        "start_price": 19.52,
+        "end_price": 14.55,
+        "cum_pct_move": -25.46
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2025-09-29",
+        "end_date": "2025-10-14",
+        "start_price": 139.06,
+        "end_price": 174.31,
+        "cum_pct_move": 25.35
+      },
+      {
+        "ticker": "SILVERBEES.NS",
+        "window_days": 10,
+        "start_date": "2026-01-01",
+        "end_date": "2026-01-16",
+        "start_price": 214.95,
+        "end_price": 269.44,
+        "cum_pct_move": 25.35
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-05-21",
+        "end_date": "2020-06-05",
+        "start_price": 12.14,
+        "end_price": 15.21,
+        "cum_pct_move": 25.29
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-05-22",
+        "end_date": "2020-06-08",
+        "start_price": 12.06,
+        "end_price": 15.11,
+        "cum_pct_move": 25.29
+      },
+      {
+        "ticker": "NIFTYBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-04",
+        "end_date": "2020-03-19",
+        "start_price": 119.52,
+        "end_price": 89.47,
+        "cum_pct_move": -25.14
+      },
+      {
+        "ticker": "DIVOPPBEES.NS",
+        "window_days": 10,
+        "start_date": "2020-03-06",
+        "end_date": "2020-03-23",
+        "start_price": 28.59,
+        "end_price": 21.41,
+        "cum_pct_move": -25.11
+      },
+      {
+        "ticker": "PSUBNKBEES.NS",
+        "window_days": 5,
+        "start_date": "2021-01-29",
+        "end_date": "2021-02-05",
+        "start_price": 19.92,
+        "end_price": 24.92,
+        "cum_pct_move": 25.1
+      },
+      {
+        "ticker": "MOM100.NS",
+        "window_days": 10,
+        "start_date": "2020-03-05",
+        "end_date": "2020-03-20",
+        "start_price": 17.7,
+        "end_price": 13.26,
+        "cum_pct_move": -25.08
+      }
+    ],
+    "n_single_day_flags": 0,
+    "n_multiday_flags": 60,
+    "flags_csv_path": "/home/runner/work/etf_45daysfixed/etf_45daysfixed/data/data_quality_flags.csv"
   },
   "portfolio_invariant_issues": [],
+  "catastrophic_runs": [
+    {
+      "method": "mansfield",
+      "lookback": 35,
+      "max_drawdown_pct": -99.99,
+      "cagr_pct": -61.29,
+      "total_return_pct": -99.97,
+      "n_round_trip_trades": 1016,
+      "n_trades_return_below_neg50pct": 0,
+      "trade_log_csv": "/home/runner/work/etf_45daysfixed/etf_45daysfixed/data/catastrophic_runs/mansfield_lb35_full_tradelog.csv",
+      "worst_trades_csv": "/home/runner/work/etf_45daysfixed/etf_45daysfixed/data/catastrophic_runs/mansfield_lb35_worst_trades.csv",
+      "worst_trades": [
+        {
+          "ticker": "SILVERBEES.NS",
+          "entry_date": "2026-01-27",
+          "exit_date": "2026-02-09",
+          "holding_days": 13,
+          "entry_price": 317.85,
+          "exit_price": 243.7,
+          "return_pct": -23.405
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-10-07",
+          "exit_date": "2024-10-14",
+          "holding_days": 7,
+          "entry_price": 409.58,
+          "exit_price": 359.51,
+          "return_pct": -12.312
+        },
+        {
+          "ticker": "MON100.NS",
+          "entry_date": "2024-12-30",
+          "exit_date": "2025-01-13",
+          "holding_days": 14,
+          "entry_price": 215.63,
+          "exit_price": 189.55,
+          "return_pct": -12.183
+        },
+        {
+          "ticker": "PSUBNKBEES.NS",
+          "entry_date": "2020-12-14",
+          "exit_date": "2020-12-21",
+          "holding_days": 7,
+          "entry_price": 20.36,
+          "exit_price": 18.02,
+          "return_pct": -11.582
+        },
+        {
+          "ticker": "CONSUMBEES.NS",
+          "entry_date": "2020-05-11",
+          "exit_date": "2020-05-18",
+          "holding_days": 7,
+          "entry_price": 52.72,
+          "exit_price": 47.36,
+          "return_pct": -10.257
+        },
+        {
+          "ticker": "SILVERBEES.NS",
+          "entry_date": "2026-05-18",
+          "exit_date": "2026-06-08",
+          "holding_days": 21,
+          "entry_price": 253.16,
+          "exit_price": 227.93,
+          "return_pct": -10.056
+        },
+        {
+          "ticker": "MON100.NS",
+          "entry_date": "2018-10-01",
+          "exit_date": "2018-10-29",
+          "holding_days": 28,
+          "entry_price": 64.09,
+          "exit_price": 58.09,
+          "return_pct": -9.452
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-10-14",
+          "exit_date": "2024-10-21",
+          "holding_days": 7,
+          "entry_price": 359.51,
+          "exit_price": 326.5,
+          "return_pct": -9.273
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2020-03-02",
+          "exit_date": "2020-04-07",
+          "holding_days": 36,
+          "entry_price": 372.0,
+          "exit_price": 339.98,
+          "return_pct": -8.699
+        },
+        {
+          "ticker": "CPSEETF.NS",
+          "entry_date": "2022-06-13",
+          "exit_date": "2022-06-20",
+          "holding_days": 7,
+          "entry_price": 34.39,
+          "exit_price": 31.44,
+          "return_pct": -8.669
+        },
+        {
+          "ticker": "PSUBNKBEES.NS",
+          "entry_date": "2022-09-19",
+          "exit_date": "2022-09-26",
+          "holding_days": 7,
+          "entry_price": 35.69,
+          "exit_price": 32.7,
+          "return_pct": -8.469
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-11-11",
+          "exit_date": "2024-11-18",
+          "holding_days": 7,
+          "entry_price": 359.38,
+          "exit_price": 329.95,
+          "return_pct": -8.281
+        },
+        {
+          "ticker": "MAFANG.NS",
+          "entry_date": "2021-11-22",
+          "exit_date": "2021-12-06",
+          "holding_days": 14,
+          "entry_price": 59.75,
+          "exit_price": 55.16,
+          "return_pct": -7.774
+        },
+        {
+          "ticker": "CPSEETF.NS",
+          "entry_date": "2022-09-19",
+          "exit_date": "2022-09-26",
+          "holding_days": 7,
+          "entry_price": 37.41,
+          "exit_price": 34.55,
+          "return_pct": -7.737
+        },
+        {
+          "ticker": "CPSEETF.NS",
+          "entry_date": "2024-03-11",
+          "exit_date": "2024-03-18",
+          "holding_days": 7,
+          "entry_price": 82.73,
+          "exit_price": 76.54,
+          "return_pct": -7.575
+        }
+      ]
+    },
+    {
+      "method": "mansfield",
+      "lookback": 40,
+      "max_drawdown_pct": -99.99,
+      "cagr_pct": -62.5,
+      "total_return_pct": -99.98,
+      "n_round_trip_trades": 956,
+      "n_trades_return_below_neg50pct": 0,
+      "trade_log_csv": "/home/runner/work/etf_45daysfixed/etf_45daysfixed/data/catastrophic_runs/mansfield_lb40_full_tradelog.csv",
+      "worst_trades_csv": "/home/runner/work/etf_45daysfixed/etf_45daysfixed/data/catastrophic_runs/mansfield_lb40_worst_trades.csv",
+      "worst_trades": [
+        {
+          "ticker": "SILVERBEES.NS",
+          "entry_date": "2026-01-27",
+          "exit_date": "2026-02-09",
+          "holding_days": 13,
+          "entry_price": 317.85,
+          "exit_price": 243.7,
+          "return_pct": -23.405
+        },
+        {
+          "ticker": "SILVERBEES.NS",
+          "entry_date": "2025-10-13",
+          "exit_date": "2025-10-27",
+          "holding_days": 14,
+          "entry_price": 164.34,
+          "exit_price": 138.85,
+          "return_pct": -15.595
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-10-07",
+          "exit_date": "2024-10-14",
+          "holding_days": 7,
+          "entry_price": 409.58,
+          "exit_price": 359.51,
+          "return_pct": -12.312
+        },
+        {
+          "ticker": "MON100.NS",
+          "entry_date": "2024-12-30",
+          "exit_date": "2025-01-13",
+          "holding_days": 14,
+          "entry_price": 215.63,
+          "exit_price": 189.55,
+          "return_pct": -12.183
+        },
+        {
+          "ticker": "PSUBNKBEES.NS",
+          "entry_date": "2020-12-14",
+          "exit_date": "2020-12-21",
+          "holding_days": 7,
+          "entry_price": 20.36,
+          "exit_price": 18.02,
+          "return_pct": -11.582
+        },
+        {
+          "ticker": "MON100.NS",
+          "entry_date": "2018-10-08",
+          "exit_date": "2018-10-29",
+          "holding_days": 21,
+          "entry_price": 65.58,
+          "exit_price": 58.09,
+          "return_pct": -11.51
+        },
+        {
+          "ticker": "CPSEETF.NS",
+          "entry_date": "2018-10-01",
+          "exit_date": "2018-10-08",
+          "holding_days": 7,
+          "entry_price": 26.96,
+          "exit_price": 24.04,
+          "return_pct": -10.92
+        },
+        {
+          "ticker": "CONSUMBEES.NS",
+          "entry_date": "2020-05-11",
+          "exit_date": "2020-05-18",
+          "holding_days": 7,
+          "entry_price": 52.72,
+          "exit_price": 47.36,
+          "return_pct": -10.257
+        },
+        {
+          "ticker": "PSUBNKBEES.NS",
+          "entry_date": "2021-11-01",
+          "exit_date": "2021-11-29",
+          "holding_days": 28,
+          "entry_price": 31.26,
+          "exit_price": 28.14,
+          "return_pct": -10.071
+        },
+        {
+          "ticker": "SILVERBEES.NS",
+          "entry_date": "2026-05-18",
+          "exit_date": "2026-06-08",
+          "holding_days": 21,
+          "entry_price": 253.16,
+          "exit_price": 227.93,
+          "return_pct": -10.056
+        },
+        {
+          "ticker": "ITBEES.NS",
+          "entry_date": "2022-01-17",
+          "exit_date": "2022-01-24",
+          "holding_days": 7,
+          "entry_price": 39.64,
+          "exit_price": 35.73,
+          "return_pct": -9.954
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-10-14",
+          "exit_date": "2024-10-21",
+          "holding_days": 7,
+          "entry_price": 359.51,
+          "exit_price": 326.5,
+          "return_pct": -9.273
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2020-03-02",
+          "exit_date": "2020-04-07",
+          "holding_days": 36,
+          "entry_price": 372.0,
+          "exit_price": 339.98,
+          "return_pct": -8.699
+        },
+        {
+          "ticker": "CPSEETF.NS",
+          "entry_date": "2022-06-13",
+          "exit_date": "2022-06-20",
+          "holding_days": 7,
+          "entry_price": 34.39,
+          "exit_price": 31.44,
+          "return_pct": -8.669
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-11-11",
+          "exit_date": "2024-11-18",
+          "holding_days": 7,
+          "entry_price": 359.38,
+          "exit_price": 329.95,
+          "return_pct": -8.281
+        }
+      ]
+    },
+    {
+      "method": "momentum",
+      "lookback": 50,
+      "max_drawdown_pct": -99.99,
+      "cagr_pct": -61.43,
+      "total_return_pct": -99.97,
+      "n_round_trip_trades": 914,
+      "n_trades_return_below_neg50pct": 0,
+      "trade_log_csv": "/home/runner/work/etf_45daysfixed/etf_45daysfixed/data/catastrophic_runs/momentum_lb50_full_tradelog.csv",
+      "worst_trades_csv": "/home/runner/work/etf_45daysfixed/etf_45daysfixed/data/catastrophic_runs/momentum_lb50_worst_trades.csv",
+      "worst_trades": [
+        {
+          "ticker": "SILVERBEES.NS",
+          "entry_date": "2026-01-27",
+          "exit_date": "2026-02-02",
+          "holding_days": 6,
+          "entry_price": 317.85,
+          "exit_price": 219.94,
+          "return_pct": -30.873
+        },
+        {
+          "ticker": "SILVERBEES.NS",
+          "entry_date": "2026-03-09",
+          "exit_date": "2026-03-23",
+          "holding_days": 14,
+          "entry_price": 247.0,
+          "exit_price": 193.52,
+          "return_pct": -21.73
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2025-02-24",
+          "exit_date": "2025-04-07",
+          "holding_days": 42,
+          "entry_price": 427.37,
+          "exit_price": 348.05,
+          "return_pct": -18.641
+        },
+        {
+          "ticker": "MON100.NS",
+          "entry_date": "2020-02-24",
+          "exit_date": "2020-03-16",
+          "holding_days": 21,
+          "entry_price": 65.97,
+          "exit_price": 55.26,
+          "return_pct": -16.318
+        },
+        {
+          "ticker": "GOLDBEES.NS",
+          "entry_date": "2026-03-09",
+          "exit_date": "2026-03-23",
+          "holding_days": 14,
+          "entry_price": 131.35,
+          "exit_price": 110.72,
+          "return_pct": -15.79
+        },
+        {
+          "ticker": "MON100.NS",
+          "entry_date": "2018-11-12",
+          "exit_date": "2018-11-19",
+          "holding_days": 7,
+          "entry_price": 56.76,
+          "exit_price": 48.8,
+          "return_pct": -14.11
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-10-07",
+          "exit_date": "2024-10-14",
+          "holding_days": 7,
+          "entry_price": 409.58,
+          "exit_price": 359.51,
+          "return_pct": -12.312
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2018-06-11",
+          "exit_date": "2018-06-18",
+          "holding_days": 7,
+          "entry_price": 392.26,
+          "exit_price": 346.29,
+          "return_pct": -11.808
+        },
+        {
+          "ticker": "CPSEETF.NS",
+          "entry_date": "2018-10-01",
+          "exit_date": "2018-10-08",
+          "holding_days": 7,
+          "entry_price": 26.96,
+          "exit_price": 24.04,
+          "return_pct": -10.92
+        },
+        {
+          "ticker": "PSUBNKBEES.NS",
+          "entry_date": "2021-12-13",
+          "exit_date": "2021-12-20",
+          "holding_days": 7,
+          "entry_price": 30.13,
+          "exit_price": 26.93,
+          "return_pct": -10.71
+        },
+        {
+          "ticker": "PSUBNKBEES.NS",
+          "entry_date": "2018-09-17",
+          "exit_date": "2018-09-24",
+          "holding_days": 7,
+          "entry_price": 34.0,
+          "exit_price": 30.46,
+          "return_pct": -10.501
+        },
+        {
+          "ticker": "ITBEES.NS",
+          "entry_date": "2022-01-17",
+          "exit_date": "2022-01-31",
+          "holding_days": 14,
+          "entry_price": 39.64,
+          "exit_price": 35.7,
+          "return_pct": -10.029
+        },
+        {
+          "ticker": "GOLDBEES.NS",
+          "entry_date": "2026-01-27",
+          "exit_date": "2026-02-02",
+          "holding_days": 6,
+          "entry_price": 131.45,
+          "exit_price": 118.67,
+          "return_pct": -9.813
+        },
+        {
+          "ticker": "HNGSNGBEES.NS",
+          "entry_date": "2024-10-14",
+          "exit_date": "2024-10-21",
+          "holding_days": 7,
+          "entry_price": 359.51,
+          "exit_price": 326.5,
+          "return_pct": -9.273
+        },
+        {
+          "ticker": "CPSEETF.NS",
+          "entry_date": "2022-06-13",
+          "exit_date": "2022-06-20",
+          "holding_days": 7,
+          "entry_price": 34.39,
+          "exit_price": 31.44,
+          "return_pct": -8.669
+        }
+      ]
+    }
+  ],
   "sweep": [
     {
       "method": "mansfield",
