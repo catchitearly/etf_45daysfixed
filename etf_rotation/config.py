@@ -60,6 +60,29 @@ REBALANCE_MODE = "full_liquidate"        # "full_liquidate": sell ALL holdings +
 # ---------------------------------------------------------------------------
 DATA_START = "2017-06-01"              # buffer so 45d RS is valid from day 1 of BACKTEST_START
 BACKTEST_START = "2018-01-01"
+
+# ---------------------------------------------------------------------------
+# Data source
+# ---------------------------------------------------------------------------
+DATA_SOURCE = os.environ.get("DATA_SOURCE", "yfinance")   # "yfinance" or "fyers"
+
+# Fyers API v3 credentials -- read from env vars, which in GitHub Actions
+# come from repository secrets (FYERS_CLIENT_ID, FYERS_ACCESS_TOKEN). See
+# README "Using Fyers instead of yfinance" for setup and IMPORTANT caveats
+# about daily token expiry -- there is deliberately NO auto-refresh here
+# (no refresh_token/PIN available), so an expired token fails loudly rather
+# than silently falling back to something else.
+FYERS_CLIENT_ID = os.environ.get("FYERS_CLIENT_ID")
+FYERS_ACCESS_TOKEN = os.environ.get("FYERS_ACCESS_TOKEN")
+FYERS_BASE_URL = "https://api-t1.fyers.in"
+FYERS_HISTORY_PATH = "/data/history"
+FYERS_CHUNK_DAYS = 365          # Fyers' daily-resolution history API is chunked per request
+FYERS_REQUEST_DELAY_SEC = 0.35  # be polite to the rate limit across ~24 tickers x several chunks
+
+# Override if a specific ETF's Fyers symbol doesn't follow the standard
+# "NSE:<SYM>-EQ" pattern (verify against Fyers symbol master before relying
+# on this for any ticker not already confirmed working).
+FYERS_SYMBOL_OVERRIDES = {}
 SEGMENT_1 = ("2018-01-01", "2024-12-31")   # in-sample backtest
 SEGMENT_2 = ("2025-01-01", "2025-12-31")   # forward test (no parameter tuning done on this period)
 SEGMENT_3 = ("2026-01-01", None)           # forward test, None = up to latest available date
@@ -70,6 +93,7 @@ SEGMENT_3 = ("2026-01-01", None)           # forward test, None = up to latest a
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(ROOT, "data")
 PRICE_CACHE = os.path.join(DATA_DIR, "prices.csv")
+PRICE_CACHE_FYERS = os.path.join(DATA_DIR, "prices_fyers.csv")
 DOCS_DIR = os.path.join(ROOT, "docs")
 DASHBOARD_HTML = os.path.join(DOCS_DIR, "index.html")
 TRADE_LOG_CSV = os.path.join(DATA_DIR, "trade_log.csv")

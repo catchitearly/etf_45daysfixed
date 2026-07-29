@@ -102,9 +102,10 @@ silently producing a corrupted equity curve and drawdown stat.
 
 ```
 etf_rotation/
-  config.py        # ETF list + all strategy parameters (TOP_N, RS_METHODS, REBALANCE_MODE, LOOKBACK_SWEEP, etc.)
-  data.py          # yfinance fetch + local CSV cache, and a synthetic-data
-                    # generator used only for offline pipeline testing
+  config.py        # ETF list + all strategy parameters (TOP_N, RS_METHODS, REBALANCE_MODE, LOOKBACK_SWEEP, DATA_SOURCE, etc.)
+  data.py          # source-agnostic fetch_prices() dispatcher (yfinance or fyers) + local CSV caching,
+                    # and a synthetic-data generator used only for offline pipeline testing
+  fyers_data.py     # Fyers API v3 historical-data fetcher (alternative to yfinance)
   data_quality.py   # bad-price-tick flagging + portfolio invariant re-check
   rs.py            # RS engines: compute_mansfield_rs, compute_momentum_rs, compute_rs (dispatcher)
   portfolio.py      # both rebalance modes (full_liquidate / diff) + transaction costs + invariant asserts
@@ -115,6 +116,7 @@ scripts/
   run.py                    # fetch data -> run_all_segments -> dashboard (used by Monday workflow)
   weekly_scan_preview.py    # Saturday-only preview of what Monday would trade, for both methods
   run_robustness.py         # the curve-fit-avoidance suite (separate, less frequent)
+  test_fyers_connection.py  # ONE-call smoke test for Fyers credentials/symbol mapping -- run before trusting the full pipeline
 .github/workflows/
   saturday_scan.yml     # Sat 11:30am IST — publishes preview of next Monday's trades (both methods)
   monday_refresh.yml    # Mon 6pm IST (+Tue fallback) — runs all simulations, updates dashboard, deploys to Pages
@@ -139,6 +141,56 @@ dashboard, trade logs, and current holdings are always exactly reproducible.
    permissions"** (needed so the workflows can commit updated data/dashboard).
 4. That's it — the Saturday and Monday workflows run on schedule. You can
    also trigger either manually via **Actions → (workflow) → Run workflow**.
+
+## Using Fyers instead of yfinance
+
+By default all scripts fetch price data from Yahoo Finance (`yfinance`).
+You can switch to the [Fyers API v3](https://myapi.fyers.in/) instead —
+useful if you have a Fyers trading account and prefer their data / want to
+avoid Yahoo Finance rate limits.
+
+**⚠️ Important — token expiry, no auto-refresh:** Fyers `access_token`s are
+typically valid for a **single trading day**. This integration does **not**
+implement the refresh_token/PIN flow (not configured here), so when the
+token expires, scheduled runs will **fail loudly** (the GitHub Actions run
+shows red, no silent fallback to yfinance) rather than quietly using stale
+or no data. When that happens: generate a fresh `access_token` from your
+Fyers app and update the `FYERS_ACCESS_TOKEN` secret below. If this
+daily-refresh chore gets old, ask about adding the refresh_token flow —
+it needs your app's refresh_token + PIN (or app secret) as additional secrets.
+
+**Setup:**
+1. **Settings → Secrets and variables → Actions → New repository secret:**
+   - `FYERS_CLIENT_ID` — your Fyers app client ID
+   - `FYERS_ACCESS_TOKEN` — your current access token
+2. **Settings → Secrets and variables → Actions → Variables tab → New
+   repository variable:** `DATA_SOURCE` = `fyers` (omit this, or set it to
+   `yfinance`, to use Yahoo Finance instead — that's the default).
+3. **Verify before trusting it for real runs** — the exact Fyers endpoint
+   shape and the NSE-ticker → Fyers-symbol mapping (`GOLDBEES.NS` →
+   `NSE:GOLDBEES-EQ`) were written from documented API conventions and
+   could not be tested against a live account while building this. Run:
+   ```bash
+   FYERS_CLIENT_ID=xxx FYERS_ACCESS_TOKEN=yyy python scripts/test_fyers_connection.py
+   ```
+   This makes exactly ONE API call (fetches ~10 days of NIFTYBEES) and
+   prints either the parsed candles or a specific, actionable error. Fix
+   `etf_rotation/fyers_data.py` if anything about the request/response
+   shape doesn't match what your account actually returns, before relying
+   on it for the full 24-ticker pipeline.
+4. Locally: `DATA_SOURCE=fyers python scripts/run.py` (or set `DATA_SOURCE`
+   as a shell env var / in a local `.env` you don't commit).
+
+**Known gap vs. yfinance:** Fyers' history API returns raw close prices —
+unlike yfinance's `auto_adjust=True`, there's no built-in split/dividend
+adjustment here. A real unit split on an ETF will show up as a genuine
+price-level jump that the strategy's per-series normalization does NOT
+retroactively correct. Cross-check corporate actions for any ETF you rely
+on heavily if using the Fyers source long-term.
+
+Fyers and yfinance data are cached **separately** (`data/prices.csv` vs.
+`data/prices_fyers.csv`) so switching `DATA_SOURCE` never silently mixes
+vendors within one cached series.
 
 ## Running locally
 
