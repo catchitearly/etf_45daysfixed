@@ -75,6 +75,8 @@ def preview_for_method(prices, method, scan_date, rebalance_mode):
 
 
 def main():
+    print(f"[weekly_scan] DATA_SOURCE = {config.DATA_SOURCE!r} "
+          f"(set via env var / repo variable; defaults to 'yfinance' if unset)")
     prices = data.fetch_prices(start=config.DATA_START)
     scan_date = prices.index.max()
     rebalance_mode = config.REBALANCE_MODE

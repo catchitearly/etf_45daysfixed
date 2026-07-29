@@ -153,6 +153,7 @@ def render_dashboard(prices, top_n=config.TOP_N, methods=None, rebalance_mode=No
 
     payload = {
         "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M IST"),
+        "data_source": config.DATA_SOURCE,
         "top_n": top_n,
         "lookback": config.LOOKBACK_DAYS,
         "initial_capital": config.INITIAL_CAPITAL,
@@ -262,7 +263,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     <h1>ETF Relative-Strength Rotation</h1>
     <div class="sub" id="subHeader"></div>
   </div>
-  <div class="meta">Last updated <b id="genAt"></b><br>Capital \u20b9<span id="capital"></span> (fresh per segment) &middot; Top-<span id="topn"></span> &middot; cost <span id="cost"></span> bps/trade</div>
+  <div class="meta">Last updated <b id="genAt"></b> &middot; source <b id="dataSource"></b><br>Capital \u20b9<span id="capital"></span> (fresh per segment) &middot; Top-<span id="topn"></span> &middot; cost <span id="cost"></span> bps/trade</div>
 </header>
 <main>
 
@@ -310,6 +311,9 @@ const METHOD_META = {
 };
 
 document.getElementById('genAt').textContent = DATA.generated_at;
+const srcEl = document.getElementById('dataSource');
+srcEl.textContent = DATA.data_source;
+srcEl.style.color = DATA.data_source === 'fyers' ? 'var(--amber)' : 'var(--teal)';
 document.getElementById('capital').textContent = DATA.initial_capital.toLocaleString('en-IN');
 document.getElementById('topn').textContent = DATA.top_n;
 document.getElementById('cost').textContent = (DATA.txn_cost_bps*10000).toFixed(0);

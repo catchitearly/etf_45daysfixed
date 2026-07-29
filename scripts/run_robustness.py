@@ -31,6 +31,8 @@ def main():
     ap.add_argument("--end", default=None)
     args = ap.parse_args()
 
+    print(f"[robustness] DATA_SOURCE = {config.DATA_SOURCE!r} "
+          f"(set via env var / repo variable; defaults to 'yfinance' if unset)")
     print("[robustness] fetching price data ...")
     if args.synthetic:
         prices = data.make_synthetic_prices(start=config.DATA_START, end=args.end or "2026-07-27")
@@ -38,6 +40,8 @@ def main():
         prices = data.fetch_prices(start=config.DATA_START, end=args.end)
     end_date = str(prices.index.max().date())
     print(f"[robustness] price data shape: {prices.shape}, last date: {end_date}")
+    cache_path = config.PRICE_CACHE_FYERS if config.DATA_SOURCE == "fyers" else config.PRICE_CACHE
+    print(f"[robustness] (cache file: {cache_path})")
 
     # -- 0. Data quality pass --------------------------------------------
     print("[robustness] checking for suspicious price ticks ...")
@@ -97,6 +101,7 @@ def main():
 
     payload = {
         "generated_at": end_date,
+        "data_source": config.DATA_SOURCE,
         "lookback_sweep_range": [config.LOOKBACK_SWEEP[0], config.LOOKBACK_SWEEP[-1], 5],
         "top_n": config.TOP_N,
         "rebalance_mode": config.REBALANCE_MODE,

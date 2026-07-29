@@ -36,6 +36,8 @@ def main():
     ap.add_argument("--synthetic", action="store_true", help="use synthetic data (for offline testing only)")
     args = ap.parse_args()
 
+    print(f"[run] DATA_SOURCE = {config.DATA_SOURCE!r} "
+          f"(set via env var / repo variable; defaults to 'yfinance' if unset)")
     print(f"[run] fetching price data (cache={not args.no_cache}, synthetic={args.synthetic}) ...")
     if args.synthetic:
         prices = data.make_synthetic_prices(start=config.DATA_START, end=args.end or "2026-07-27")
@@ -43,6 +45,8 @@ def main():
         prices = data.fetch_prices(start=config.DATA_START, end=args.end, use_cache=not args.no_cache)
 
     print(f"[run] price data shape: {prices.shape}, last date: {prices.index.max()}")
+    cache_path = config.PRICE_CACHE_FYERS if config.DATA_SOURCE == "fyers" else config.PRICE_CACHE
+    print(f"[run] (cache file: {cache_path})")
     print(f"[run] top_n={args.top_n}, methods={args.methods}, rebalance_mode={args.rebalance_mode}")
     print("[run] running independent simulations per (method x segment) ...")
 
