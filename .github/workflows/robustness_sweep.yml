@@ -26,9 +26,17 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run robustness / curve-fit-avoidance suite
+        env:
+          DATA_SOURCE: ${{ vars.DATA_SOURCE || 'yfinance' }}
+          FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
         run: python scripts/run_robustness.py
 
       - name: Rebuild dashboard (to pick up new robustness.json)
+        env:
+          DATA_SOURCE: ${{ vars.DATA_SOURCE || 'yfinance' }}
+          FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
         run: python scripts/run.py
 
       - name: Commit updated data + dashboard

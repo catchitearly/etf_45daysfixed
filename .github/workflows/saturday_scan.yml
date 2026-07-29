@@ -23,12 +23,16 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Saturday scan preview
+        env:
+          DATA_SOURCE: ${{ vars.DATA_SOURCE || 'yfinance' }}
+          FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
         run: python scripts/weekly_scan_preview.py
 
       - name: Commit signal preview + price cache
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/latest_signal.json data/prices.csv
+          git add data/latest_signal.json data/prices.csv data/prices_fyers.csv 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Saturday RS scan preview $(date -u +%Y-%m-%d)"
           git push
