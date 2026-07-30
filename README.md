@@ -98,6 +98,61 @@ cash-settled strategy — if a bad price tick or a sizing bug ever produced
 an impossible number, the simulation fails loudly immediately rather than
 silently producing a corrupted equity curve and drawdown stat.
 
+## Risk overlays (optional, off by default)
+
+Two independent safety nets, layered on top of the weekly rotation without
+changing its Saturday-scan/Monday-execute cadence. Both default to **off**
+so existing behavior is unchanged unless you opt in.
+
+### Daily hard stop-loss
+
+Normally the strategy can only react to a crash at the *next Monday* — up
+to 6 days of continued exposure. With this enabled, every held position is
+checked **every trading day** (not just the weekly rebalance day); if it's
+down more than the threshold from its entry price, it's force-sold
+immediately at that day's close. Freed capital sits in cash until the next
+scheduled weekly rebalance redeploys it — this does not chase a
+replacement position, just moves to cash and waits for the normal cycle.
+
+```bash
+python scripts/run.py --stop-loss --stop-loss-pct 10       # enable, 10% threshold
+python scripts/run.py --no-stop-loss                        # explicitly disable
+# or via env var / GitHub repo variable:
+STOP_LOSS_ENABLED=true STOP_LOSS_PCT=10 python scripts/run.py
+```
+Stop-loss-triggered exits are logged with `action="STOP_LOSS_SELL"` (distinct
+from a normal weekly `SELL`) in the trade log, shown in amber on the
+dashboard, and counted per-segment as a "Stop-Losses Hit" metric card.
+
+### Parabolic / overextended-RS filter
+
+Excludes a ticker from the top-N selection if its RS score is more than
+`PARABOLIC_ZSCORE_THRESHOLD` standard deviations above **its own trailing
+`PARABOLIC_ZSCORE_WINDOW`-day history** — i.e. "this is unusually stretched
+even by its own standards," a known precursor to sharp momentum-crash-style
+reversals — even if it would otherwise rank #1. The next best-ranked
+eligible ticker takes the freed slot instead.
+
+```bash
+python scripts/run.py --parabolic-filter --parabolic-zscore 2.5 --parabolic-window 252
+python scripts/run.py --no-parabolic-filter
+# or via env var / GitHub repo variable:
+PARABOLIC_FILTER_ENABLED=true PARABOLIC_ZSCORE_THRESHOLD=2.5 python scripts/run.py
+```
+
+Both are also available on `scripts/run_robustness.py` (same flag names) so
+you can sweep lookbacks with either overlay engaged, and both are wired into
+the GitHub Actions workflows via repo **variables** (`STOP_LOSS_ENABLED`,
+`STOP_LOSS_PCT`, `PARABOLIC_FILTER_ENABLED`, `PARABOLIC_ZSCORE_THRESHOLD`,
+`PARABOLIC_ZSCORE_WINDOW`) — set them under Settings → Secrets and
+variables → Actions → Variables tab, same place as `DATA_SOURCE`.
+
+**Caveat:** neither overlay is a magic fix for a violent, broad move (like
+gold/silver's Jan 2026 crash) — a same-day stop-loss still realizes a real
+loss up to the threshold, and the parabolic filter only stops *entering*
+an overextended name, it doesn't protect an existing position already held
+when things turn. They reduce damage; they don't eliminate tail risk.
+
 ## Repo layout
 
 ```

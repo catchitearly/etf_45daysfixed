@@ -29,6 +29,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--synthetic", action="store_true", help="use synthetic data (offline testing only)")
     ap.add_argument("--end", default=None)
+    ap.add_argument("--stop-loss", dest="stop_loss", action="store_true", default=None,
+                     help=f"enable daily hard stop-loss for the sweep (default: {config.STOP_LOSS_ENABLED})")
+    ap.add_argument("--no-stop-loss", dest="stop_loss", action="store_false")
+    ap.add_argument("--stop-loss-pct", type=float, default=None)
+    ap.add_argument("--parabolic-filter", dest="parabolic_filter", action="store_true", default=None,
+                     help=f"enable overextended-RS exclusion filter for the sweep (default: {config.PARABOLIC_FILTER_ENABLED})")
+    ap.add_argument("--no-parabolic-filter", dest="parabolic_filter", action="store_false")
+    ap.add_argument("--parabolic-zscore", type=float, default=None)
+    ap.add_argument("--parabolic-window", type=int, default=None)
     args = ap.parse_args()
 
     print(f"[robustness] DATA_SOURCE = {config.DATA_SOURCE!r} "
@@ -65,8 +74,15 @@ def main():
           f"step 5, both methods, full period {config.BACKTEST_START}..{end_date} ...")
     print(f"[robustness] any run with max drawdown worse than {config.CATASTROPHIC_DD_THRESHOLD_PCT}% "
           f"will have its full trade log + worst trades auto-dumped to {config.CATASTROPHIC_RUNS_DIR}/")
+    stop_loss_enabled = config.STOP_LOSS_ENABLED if args.stop_loss is None else args.stop_loss
+    parabolic_enabled = config.PARABOLIC_FILTER_ENABLED if args.parabolic_filter is None else args.parabolic_filter
+    print(f"[robustness] stop_loss_enabled={stop_loss_enabled}, parabolic_filter_enabled={parabolic_enabled}")
+
     sweep_df, best_full_period, invariant_issues, catastrophic_runs = run_lookback_sweep(
         prices, start=config.BACKTEST_START, end=end_date,
+        stop_loss_enabled=args.stop_loss, stop_loss_pct=args.stop_loss_pct,
+        parabolic_filter_enabled=args.parabolic_filter, parabolic_zscore_threshold=args.parabolic_zscore,
+        parabolic_zscore_window=args.parabolic_window,
     )
     print("[robustness]   done:", len(sweep_df), "runs (invariants re-checked on ALL of them, not just the best)")
 

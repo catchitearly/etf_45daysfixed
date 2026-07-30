@@ -41,19 +41,44 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 90                     # RS smoothing / momentum window (trading days)
-TOP_N = int(os.environ.get("TOP_N", 5))  # number of ETFs to hold, overridable via env var
+LOOKBACK_DAYS = 45                     # RS smoothing / momentum window (trading days)
+TOP_N = int(os.environ.get("TOP_N", 3))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
 INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH segment (see backtest.py)
 TXN_COST_BPS = 0.0005                  # 0.05% per executed trade (buy or sell), covers brokerage+STT+slippage
 
-LOOKBACK_SWEEP = list(range(15, 151, 5))  # 15, 20, 25, ..., 90 -- for parameter-stability testing
+LOOKBACK_SWEEP = list(range(15, 91, 5))  # 15, 20, 25, ..., 90 -- for parameter-stability testing
 
 RS_METHODS = ["mansfield", "momentum"]   # signal styles compared side-by-side on the dashboard
-REBALANCE_MODE = "diff"  #"full_liquidate"        # "full_liquidate": sell ALL holdings + equal-weight rebuy top_n
+REBALANCE_MODE = "full_liquidate"        # "full_liquidate": sell ALL holdings + equal-weight rebuy top_n
                                           # whenever the top_n SET changes (even continuing names churn).
                                           # "diff": only trade the diffs (kept as an option in portfolio.py).
+
+# ---------------------------------------------------------------------------
+# Risk overlays -- both OFF by default (opt-in), toggle via env var or CLI flag.
+# Neither changes the weekly Saturday-scan / Monday-execute cadence; both are
+# independent safety nets layered on top of it.
+# ---------------------------------------------------------------------------
+
+# Daily hard stop-loss: checked EVERY trading day (not just the weekly
+# rebalance day) -- if a held position is down more than STOP_LOSS_PCT from
+# its entry price, it is force-sold immediately at that day's close, freeing
+# the capital to cash until the next scheduled weekly rebalance redeploys it.
+# Exists to shorten reaction time from "up to 6 days" (waiting for next
+# Monday) to "same day" during a fast crash.
+STOP_LOSS_ENABLED = os.environ.get("STOP_LOSS_ENABLED", "false").lower() in ("1", "true", "yes")
+STOP_LOSS_PCT = float(os.environ.get("STOP_LOSS_PCT", 10.0))  # force-exit if down >X% from entry
+
+# Parabolic/overextended filter: excludes a ticker from the top-N selection
+# if its RS score is more than PARABOLIC_ZSCORE_THRESHOLD standard deviations
+# above ITS OWN trailing PARABOLIC_ZSCORE_WINDOW-day mean -- i.e. "this is
+# unusually stretched relative to its own history, even if it currently
+# ranks #1" -- a known momentum-crash precursor. When a ticker is excluded
+# this way, the next best-ranked ELIGIBLE ticker takes its slot instead.
+PARABOLIC_FILTER_ENABLED = os.environ.get("PARABOLIC_FILTER_ENABLED", "false").lower() in ("1", "true", "yes")
+PARABOLIC_ZSCORE_THRESHOLD = float(os.environ.get("PARABOLIC_ZSCORE_THRESHOLD", 2.5))
+PARABOLIC_ZSCORE_WINDOW = int(os.environ.get("PARABOLIC_ZSCORE_WINDOW", 252))  # ~1 trading year
 
 # ---------------------------------------------------------------------------
 # Backtest / reporting date ranges
@@ -104,7 +129,7 @@ ROBUSTNESS_JSON = os.path.join(DATA_DIR, "robustness.json")
 # Any sweep run whose max drawdown breaches this gets its full trade log and
 # worst round-trip trades auto-dumped to disk for manual inspection -- see
 # etf_rotation/robustness.py: dump_catastrophic_run().
-CATASTROPHIC_DD_THRESHOLD_PCT = -40.0
+CATASTROPHIC_DD_THRESHOLD_PCT = -80.0
 CATASTROPHIC_RUNS_DIR = os.path.join(DATA_DIR, "catastrophic_runs")
 DATA_QUALITY_FLAGS_CSV = os.path.join(DATA_DIR, "data_quality_flags.csv")
 

@@ -46,7 +46,10 @@ def build_week_anchors(price_index: pd.DatetimeIndex, start, end):
 def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
                   top_n: int = config.TOP_N, lookback: int = config.LOOKBACK_DAYS,
                   initial_capital: float = config.INITIAL_CAPITAL,
-                  rs_method: str = "mansfield", rebalance_mode: str = None):
+                  rs_method: str = "mansfield", rebalance_mode: str = None,
+                  stop_loss_enabled: bool = None, stop_loss_pct: float = None,
+                  parabolic_filter_enabled: bool = None,
+                  parabolic_zscore_threshold: float = None, parabolic_zscore_window: int = None):
     """
     Runs the full weekly rotation simulation over prices.index restricted to
     [start, end]. `prices` should already include the warm-up buffer before
@@ -62,18 +65,47 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
     rebalance_mode: "full_liquidate" or "diff" (see etf_rotation.portfolio);
                      defaults to config.REBALANCE_MODE.
 
+    Risk overlays (both default to config.*_ENABLED, i.e. OFF unless you opt in):
+      stop_loss_enabled: if True, every held position is checked EVERY
+        trading day (not just the weekly rebalance) and force-sold if down
+        more than stop_loss_pct from its entry price -- see
+        Portfolio.check_stop_losses().
+      parabolic_filter_enabled: if True, a ticker is excluded from the top-N
+        selection whenever its RS score is more than
+        parabolic_zscore_threshold standard deviations above its own
+        trailing parabolic_zscore_window-day history -- see
+        rs.compute_parabolic_mask().
+
     Returns dict with:
       equity_curve: DataFrame indexed by date with columns [equity, cash]
-      trade_log: DataFrame of individual trades
+      trade_log: DataFrame of individual trades (STOP_LOSS_SELL rows are
+                 distinguishable from normal weekly SELL rows via the
+                 'action' column)
       signal_log: DataFrame, one row per week: scan_date, execute_date, top_n tickers + RS values
       holdings_log: DataFrame, weekly snapshot of holdings after execution
       final_portfolio: Portfolio object
+      stop_loss_events: DataFrame of every stop-loss-triggered exit (empty if disabled/none fired)
     """
     rebalance_mode = rebalance_mode or config.REBALANCE_MODE
+    stop_loss_enabled = config.STOP_LOSS_ENABLED if stop_loss_enabled is None else stop_loss_enabled
+    stop_loss_pct = config.STOP_LOSS_PCT if stop_loss_pct is None else stop_loss_pct
+    parabolic_filter_enabled = (config.PARABOLIC_FILTER_ENABLED if parabolic_filter_enabled is None
+                                 else parabolic_filter_enabled)
+    parabolic_zscore_threshold = (config.PARABOLIC_ZSCORE_THRESHOLD if parabolic_zscore_threshold is None
+                                   else parabolic_zscore_threshold)
+    parabolic_zscore_window = (config.PARABOLIC_ZSCORE_WINDOW if parabolic_zscore_window is None
+                                else parabolic_zscore_window)
+
     end = pd.Timestamp(end) if end else prices.index.max()
     start = pd.Timestamp(start)
 
     rs = compute_rs(prices, lookback=lookback, method=rs_method)
+
+    exclude_mask = None
+    if parabolic_filter_enabled:
+        from .rs import compute_parabolic_mask
+        exclude_mask = compute_parabolic_mask(rs, window=parabolic_zscore_window,
+                                               threshold=parabolic_zscore_threshold)
 
     sim_index = prices.index[(prices.index >= start) & (prices.index <= end)]
     if len(sim_index) == 0:
@@ -92,9 +124,17 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
     equity_rows = []
 
     for date in sim_index:
+        prices_on_date = prices.loc[date].to_dict()
+
+        # -- daily risk overlay: stop-loss check runs EVERY day, not just
+        #    on the weekly rebalance day, so a fast crash is reacted to the
+        #    same day rather than up to 6 days later at the next Monday --
+        if stop_loss_enabled:
+            pf.check_stop_losses(date, prices_on_date, stop_loss_pct=stop_loss_pct)
+
         if date in anchor_map:
             scan_date = anchor_map[date]
-            top = rank_on_date(rs, prices, scan_date, top_n=top_n)
+            top = rank_on_date(rs, prices, scan_date, top_n=top_n, exclude_mask=exclude_mask)
             top_tickers = [t for t, _ in top]
 
             signal_rows.append({
@@ -104,7 +144,6 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
                 **{f"rs_{i+1}": (round(top[i][1], 3) if i < len(top) else None) for i in range(top_n)},
             })
 
-            prices_on_date = prices.loc[date].to_dict()
             if len(top_tickers) > 0:
                 pf.rebalance(date, top_tickers, prices_on_date, mode=rebalance_mode)
 
@@ -114,7 +153,6 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
                 "cash": pf.cash,
             })
 
-        prices_on_date = prices.loc[date].to_dict()
         mv = pf.market_value(prices_on_date)
         equity_rows.append({"date": date, "equity": mv, "cash": pf.cash})
 
@@ -122,6 +160,10 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
     trade_log = pd.DataFrame(pf.trade_log)
     signal_log = pd.DataFrame(signal_rows)
     holdings_log = pd.DataFrame(holdings_rows)
+    stop_loss_events = (trade_log[trade_log["action"] == "STOP_LOSS_SELL"].copy()
+                         if len(trade_log) > 0 and "action" in trade_log.columns
+                         else pd.DataFrame(columns=["date", "action", "ticker", "units", "price",
+                                                     "entry_price", "pct_from_entry"]))
 
     return {
         "equity_curve": equity_curve,
@@ -132,17 +174,29 @@ def run_backtest(prices: pd.DataFrame, start=config.BACKTEST_START, end=None,
         "rs": rs,
         "rs_method": rs_method,
         "rebalance_mode": rebalance_mode,
+        "stop_loss_enabled": stop_loss_enabled,
+        "stop_loss_pct": stop_loss_pct,
+        "parabolic_filter_enabled": parabolic_filter_enabled,
+        "parabolic_zscore_threshold": parabolic_zscore_threshold,
+        "parabolic_zscore_window": parabolic_zscore_window,
+        "stop_loss_events": stop_loss_events,
     }
 
 
 def run_all_segments(prices: pd.DataFrame, methods=None, top_n: int = config.TOP_N,
                       lookback: int = config.LOOKBACK_DAYS,
                       initial_capital: float = config.INITIAL_CAPITAL,
-                      rebalance_mode: str = None):
+                      rebalance_mode: str = None,
+                      stop_loss_enabled: bool = None, stop_loss_pct: float = None,
+                      parabolic_filter_enabled: bool = None,
+                      parabolic_zscore_threshold: float = None, parabolic_zscore_window: int = None):
     """
     Runs EVERY (rs_method x segment) combination as an independent simulation
     (fresh initial_capital, no carryover between segments), for side-by-side
-    comparison on the dashboard.
+    comparison on the dashboard. Risk-overlay params (stop_loss_*,
+    parabolic_*) are passed straight through to run_backtest(); see its
+    docstring -- both default to OFF (config.STOP_LOSS_ENABLED /
+    config.PARABOLIC_FILTER_ENABLED) unless explicitly set here.
 
     Returns: { method: { "backtest": result, "ft1": result, "ft2": result } }
     """
@@ -161,6 +215,10 @@ def run_all_segments(prices: pd.DataFrame, methods=None, top_n: int = config.TOP
             out[method][key] = run_backtest(
                 prices, start=seg_start, end=seg_end, top_n=top_n, lookback=lookback,
                 initial_capital=initial_capital, rs_method=method, rebalance_mode=rebalance_mode,
+                stop_loss_enabled=stop_loss_enabled, stop_loss_pct=stop_loss_pct,
+                parabolic_filter_enabled=parabolic_filter_enabled,
+                parabolic_zscore_threshold=parabolic_zscore_threshold,
+                parabolic_zscore_window=parabolic_zscore_window,
             )
     return out
 

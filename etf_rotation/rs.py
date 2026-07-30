@@ -109,10 +109,46 @@ def eligible_mask(prices: pd.DataFrame, min_history_days: int = config.MIN_HISTO
     return (days_since_listing >= min_history_days) & has_price
 
 
-def rank_on_date(rs: pd.DataFrame, prices: pd.DataFrame, date, top_n: int = config.TOP_N):
+def compute_rs_zscore(rs: pd.DataFrame, window: int = config.PARABOLIC_ZSCORE_WINDOW) -> pd.DataFrame:
+    """
+    For each ticker, how many standard deviations is TODAY's RS score above/
+    below that same ticker's own trailing `window`-day RS history? A high
+    positive z-score means "this ETF's relative strength is unusually
+    stretched even by its own historical standards" -- a known precursor to
+    momentum-crash-style reversals (e.g. an asset riding a parabolic move
+    that then violently mean-reverts).
+
+    Uses a shorter min_periods (1/4 of window) so the z-score is available
+    reasonably early rather than only after a full year of history.
+    """
+    min_periods = max(30, window // 4)
+    rolling_mean = rs.rolling(window, min_periods=min_periods).mean()
+    rolling_std = rs.rolling(window, min_periods=min_periods).std()
+    return (rs - rolling_mean) / rolling_std
+
+
+def compute_parabolic_mask(rs: pd.DataFrame, window: int = config.PARABOLIC_ZSCORE_WINDOW,
+                            threshold: float = config.PARABOLIC_ZSCORE_THRESHOLD) -> pd.DataFrame:
+    """
+    Boolean DataFrame, True where a ticker's RS z-score (see
+    compute_rs_zscore) exceeds `threshold` -- i.e. "too parabolic/overextended
+    to chase right now," even if it would otherwise rank in the top-N.
+    NaN z-scores (insufficient history) are treated as NOT excluded.
+    """
+    z = compute_rs_zscore(rs, window=window)
+    return (z > threshold).fillna(False)
+
+
+def rank_on_date(rs: pd.DataFrame, prices: pd.DataFrame, date, top_n: int = config.TOP_N,
+                  exclude_mask: pd.DataFrame = None):
     """
     Returns a list of (ticker, rs_value) for the top_n eligible ETFs as of `date`,
     sorted descending by RS. Ineligible / NaN-RS tickers are excluded entirely.
+
+    exclude_mask: optional boolean DataFrame (same shape as rs) -- tickers
+    marked True for this date are skipped even if they'd otherwise rank in
+    the top_n (used by the parabolic/overextended filter). The next
+    best-ranked eligible ticker takes the freed slot instead.
     """
     elig = eligible_mask(prices)
     if date not in rs.index:
@@ -124,6 +160,10 @@ def rank_on_date(rs: pd.DataFrame, prices: pd.DataFrame, date, top_n: int = conf
 
     row = rs.loc[date]
     elig_row = elig.loc[date] if date in elig.index else pd.Series(False, index=rs.columns)
-    candidates = row[elig_row & row.notna()].sort_values(ascending=False)
+    keep = elig_row & row.notna()
+    if exclude_mask is not None:
+        excl_row = exclude_mask.loc[date] if date in exclude_mask.index else pd.Series(False, index=rs.columns)
+        keep = keep & (~excl_row)
+    candidates = row[keep].sort_values(ascending=False)
     top = list(candidates.items())[:top_n]
     return top

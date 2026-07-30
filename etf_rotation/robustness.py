@@ -44,7 +44,10 @@ from .data_quality import check_portfolio_invariants
 def run_lookback_sweep(prices, methods=None, lookbacks=None, top_n=config.TOP_N,
                         rebalance_mode=None, start=config.BACKTEST_START, end=None,
                         initial_capital=config.INITIAL_CAPITAL,
-                        catastrophic_dd_threshold=config.CATASTROPHIC_DD_THRESHOLD_PCT):
+                        catastrophic_dd_threshold=config.CATASTROPHIC_DD_THRESHOLD_PCT,
+                        stop_loss_enabled=None, stop_loss_pct=None,
+                        parabolic_filter_enabled=None, parabolic_zscore_threshold=None,
+                        parabolic_zscore_window=None):
     """
     Runs every (method, lookback) combination as an independent simulation
     over [start, end].
@@ -82,6 +85,10 @@ def run_lookback_sweep(prices, methods=None, lookbacks=None, top_n=config.TOP_N,
             result = run_backtest(
                 prices, start=start, end=end, top_n=top_n, lookback=lb,
                 initial_capital=initial_capital, rs_method=method, rebalance_mode=rebalance_mode,
+                stop_loss_enabled=stop_loss_enabled, stop_loss_pct=stop_loss_pct,
+                parabolic_filter_enabled=parabolic_filter_enabled,
+                parabolic_zscore_threshold=parabolic_zscore_threshold,
+                parabolic_zscore_window=parabolic_zscore_window,
             )
             metrics = compute_metrics(result["equity_curve"], result["trade_log"])
             rows.append({"method": method, "lookback": lb, **metrics})

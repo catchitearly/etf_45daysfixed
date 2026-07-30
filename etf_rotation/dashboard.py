@@ -41,6 +41,8 @@ def _method_payload(result, label):
     metrics = compute_metrics(equity_curve, trade_log)
     eq_labels, eq_vals = _series_for_chart(equity_curve)
     dd_labels, dd_vals = _drawdown_for_chart(equity_curve)
+    stop_loss_events = result.get("stop_loss_events")
+    metrics["stop_loss_triggers"] = int(len(stop_loss_events)) if stop_loss_events is not None else 0
     return {
         "label": label,
         "metrics": metrics,
@@ -116,11 +118,28 @@ def _load_robustness_payload():
 
 
 def render_dashboard(prices, top_n=config.TOP_N, methods=None, rebalance_mode=None,
-                      out_path=config.DASHBOARD_HTML):
+                      out_path=config.DASHBOARD_HTML,
+                      stop_loss_enabled=None, stop_loss_pct=None,
+                      parabolic_filter_enabled=None, parabolic_zscore_threshold=None,
+                      parabolic_zscore_window=None):
     methods = methods or config.RS_METHODS
     rebalance_mode = rebalance_mode or config.REBALANCE_MODE
+    stop_loss_enabled = config.STOP_LOSS_ENABLED if stop_loss_enabled is None else stop_loss_enabled
+    stop_loss_pct = config.STOP_LOSS_PCT if stop_loss_pct is None else stop_loss_pct
+    parabolic_filter_enabled = (config.PARABOLIC_FILTER_ENABLED if parabolic_filter_enabled is None
+                                 else parabolic_filter_enabled)
+    parabolic_zscore_threshold = (config.PARABOLIC_ZSCORE_THRESHOLD if parabolic_zscore_threshold is None
+                                   else parabolic_zscore_threshold)
+    parabolic_zscore_window = (config.PARABOLIC_ZSCORE_WINDOW if parabolic_zscore_window is None
+                                else parabolic_zscore_window)
 
-    all_results = run_all_segments(prices, methods=methods, top_n=top_n, rebalance_mode=rebalance_mode)
+    all_results = run_all_segments(
+        prices, methods=methods, top_n=top_n, rebalance_mode=rebalance_mode,
+        stop_loss_enabled=stop_loss_enabled, stop_loss_pct=stop_loss_pct,
+        parabolic_filter_enabled=parabolic_filter_enabled,
+        parabolic_zscore_threshold=parabolic_zscore_threshold,
+        parabolic_zscore_window=parabolic_zscore_window,
+    )
 
     segments_payload = []
     for seg_key, seg_label in SEGMENT_LABELS.items():
@@ -159,6 +178,11 @@ def render_dashboard(prices, top_n=config.TOP_N, methods=None, rebalance_mode=No
         "initial_capital": config.INITIAL_CAPITAL,
         "txn_cost_bps": config.TXN_COST_BPS,
         "rebalance_mode": rebalance_mode,
+        "stop_loss_enabled": stop_loss_enabled,
+        "stop_loss_pct": stop_loss_pct,
+        "parabolic_filter_enabled": parabolic_filter_enabled,
+        "parabolic_zscore_threshold": parabolic_zscore_threshold,
+        "parabolic_zscore_window": parabolic_zscore_window,
         "methods": methods,
         "segments": segments_payload,
         "comparison_rows": comparison_rows,
@@ -233,7 +257,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   th{text-align:left; color:var(--muted); font-weight:500; padding:7px 9px; border-bottom:1px solid var(--border); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;}
   td{padding:6px 9px; border-bottom:1px solid #1B222C;}
   tr:hover td{background:var(--panel2);}
-  .buy{color:var(--teal);} .sell{color:var(--coral);}
+  .buy{color:var(--teal);} .sell{color:var(--coral);} .stoploss{color:var(--amber); font-weight:600;}
 
   .rs-bar-row{display:flex; align-items:center; gap:10px; margin-bottom:6px;}
   .rs-bar-row .rk{width:20px; color:var(--muted); font-family:var(--mono); font-size:11px;}
@@ -318,7 +342,10 @@ document.getElementById('capital').textContent = DATA.initial_capital.toLocaleSt
 document.getElementById('topn').textContent = DATA.top_n;
 document.getElementById('cost').textContent = (DATA.txn_cost_bps*10000).toFixed(0);
 document.getElementById('subHeader').textContent =
-  `${DATA.methods.map(m=>METHOD_META[m].name).join(' vs ')} \u00b7 ${DATA.lookback}d lookback \u00b7 rebalance: ${DATA.rebalance_mode} \u00b7 weekly Saturday scan / Monday execution`;
+  `${DATA.methods.map(m=>METHOD_META[m].name).join(' vs ')} \u00b7 ${DATA.lookback}d lookback \u00b7 rebalance: ${DATA.rebalance_mode}`
+  + (DATA.stop_loss_enabled ? ` \u00b7 stop-loss: ${DATA.stop_loss_pct}%` : ' \u00b7 stop-loss: off')
+  + (DATA.parabolic_filter_enabled ? ` \u00b7 parabolic filter: ${DATA.parabolic_zscore_threshold}\u03c3/${DATA.parabolic_zscore_window}d` : ' \u00b7 parabolic filter: off')
+  + ` \u00b7 weekly Saturday scan / Monday execution`;
 
 function fmtPct(v){ if(v===null||v===undefined) return '\u2014'; const cls = v>=0?'pos':'neg'; return '<span class="'+cls+'">'+(v>=0?'+':'')+v.toFixed(2)+'%</span>'; }
 function fmtNum(v){ return v===null||v===undefined ? '\u2014' : Number(v).toLocaleString('en-IN'); }
@@ -339,6 +366,8 @@ function renderSeg(idx){
     const mp = seg.methods[method];
     const meta = METHOD_META[method];
     const m = mp.metrics;
+    const slCard = DATA.stop_loss_enabled
+      ? `<div class="card"><div class="label">Stop-Losses Hit</div><div class="value">${fmtNum(m.stop_loss_triggers)}</div></div>` : '';
     cardsHtml += `<div>
       <div class="method-head"><span class="dot" style="background:${meta.color}"></span>${meta.name}</div>
       <div class="method-desc">${meta.desc}</div>
@@ -349,6 +378,7 @@ function renderSeg(idx){
         <div class="card"><div class="label">Sharpe</div><div class="value">${m.sharpe ?? '\u2014'}</div></div>
         <div class="card"><div class="label">Calmar</div><div class="value">${m.calmar ?? '\u2014'}</div></div>
         <div class="card"><div class="label">Trades</div><div class="value">${fmtNum(m.num_trades)}</div></div>
+        ${slCard}
       </div>
     </div>`;
   });
@@ -485,7 +515,7 @@ buildSubtabs('signalSubtabs', (method)=>{
 buildSubtabs('tradeSubtabs', (method)=>{
   const tt = document.getElementById('tradeTable');
   tt.innerHTML = '<tr><th>Date</th><th>Action</th><th>Ticker</th><th>Name</th><th>Units</th><th>Price</th><th>Gross</th><th>Cost</th></tr>' +
-    DATA.trades[method].map(r=>`<tr><td>${r.date}</td><td class="${r.action==='BUY'?'buy':'sell'}">${r.action}</td><td>${r.ticker}</td><td>${r.name}</td><td>${fmtNum(r.units)}</td><td>${r.price}</td><td>${fmtNum(r.gross)}</td><td>${r.cost}</td></tr>`).join('');
+    DATA.trades[method].map(r=>`<tr><td>${r.date}</td><td class="${r.action==='BUY'?'buy':(r.action==='STOP_LOSS_SELL'?'stoploss':'sell')}">${r.action}</td><td>${r.ticker}</td><td>${r.name}</td><td>${fmtNum(r.units)}</td><td>${r.price}</td><td>${fmtNum(r.gross)}</td><td>${r.cost}</td></tr>`).join('');
 });
 
 // ============================================================

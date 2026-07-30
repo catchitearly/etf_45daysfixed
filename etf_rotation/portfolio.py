@@ -1,5 +1,6 @@
 """
-Portfolio simulation with two selectable weekly rebalancing modes.
+Portfolio simulation with two selectable weekly rebalancing modes, plus an
+optional daily hard stop-loss overlay.
 
   "full_liquidate" (current default, config.REBALANCE_MODE):
       Whenever the top-N SET changes at all (even by one name), sell EVERY
@@ -15,6 +16,12 @@ Portfolio simulation with two selectable weekly rebalancing modes.
 
 Both modes: whole-unit share sizing (NSE ETFs trade in single-unit lots),
 transaction cost (config.TXN_COST_BPS) applied on both buys and sells.
+
+Stop-loss overlay (config.STOP_LOSS_ENABLED, off by default): checked EVERY
+trading day (not just the weekly rebalance day) via check_stop_losses().
+Since a ticker never has more than one open lot at a time under either
+rebalance mode (a full sell always happens before any rebuy), a single
+entry_price per ticker is exact, not an approximation.
 """
 from dataclasses import dataclass, field
 
@@ -24,7 +31,8 @@ from . import config
 @dataclass
 class Portfolio:
     cash: float = config.INITIAL_CAPITAL
-    holdings: dict = field(default_factory=dict)   # ticker -> units
+    holdings: dict = field(default_factory=dict)      # ticker -> units
+    entry_price: dict = field(default_factory=dict)   # ticker -> price paid (for stop-loss tracking)
     cost_bps: float = config.TXN_COST_BPS
     trade_log: list = field(default_factory=list)  # list of dicts
 
@@ -43,20 +51,25 @@ class Portfolio:
         return mv
 
     # ------------------------------------------------------------------
-    def _sell(self, date, ticker, prices_on_date):
+    def _sell(self, date, ticker, prices_on_date, action="SELL"):
         px = prices_on_date.get(ticker)
         units = self.holdings.pop(ticker, 0)
+        entry = self.entry_price.pop(ticker, None)
         if px is None or px != px or units == 0:
             return
         gross = units * px
         cost = gross * self.cost_bps
         proceeds = gross - cost
         self.cash += proceeds
-        self.trade_log.append({
-            "date": date, "action": "SELL", "ticker": ticker,
+        row = {
+            "date": date, "action": action, "ticker": ticker,
             "units": units, "price": px, "gross": gross,
             "cost": cost, "cash_after": self.cash,
-        })
+        }
+        if entry is not None:
+            row["entry_price"] = entry
+            row["pct_from_entry"] = round((px / entry - 1) * 100, 3)
+        self.trade_log.append(row)
 
     def _buy_equal_weight(self, date, tickers, prices_on_date):
         buyable = [t for t in tickers if prices_on_date.get(t) == prices_on_date.get(t) and prices_on_date.get(t)]
@@ -79,6 +92,7 @@ class Portfolio:
                 f"affordable -- this indicates a sizing bug, not a market event."
             )
             self.holdings[t] = self.holdings.get(t, 0) + units
+            self.entry_price[t] = px
             self.trade_log.append({
                 "date": date, "action": "BUY", "ticker": t,
                 "units": units, "price": px, "gross": gross,
@@ -119,5 +133,31 @@ class Portfolio:
         else:
             raise ValueError(f"Unknown rebalance mode: {mode!r}")
 
+    # ------------------------------------------------------------------
+    def check_stop_losses(self, date, prices_on_date: dict, stop_loss_pct: float = None):
+        """
+        Checked EVERY trading day, independent of the weekly rebalance
+        schedule. Any held position down more than `stop_loss_pct` from its
+        entry_price is force-sold immediately at today's close, logged with
+        action="STOP_LOSS_SELL" (distinct from a normal weekly-rotation
+        "SELL" so it's identifiable in the trade log). Freed capital sits in
+        cash until the next scheduled weekly rebalance redeploys it -- this
+        does NOT immediately buy a replacement position.
+
+        Returns the list of tickers stopped out today (empty if none).
+        """
+        stop_loss_pct = stop_loss_pct if stop_loss_pct is not None else config.STOP_LOSS_PCT
+        stopped = []
+        for t in list(self.holdings.keys()):
+            entry = self.entry_price.get(t)
+            px = prices_on_date.get(t)
+            if entry is None or px is None or px != px:
+                continue
+            pct_move = (px / entry - 1) * 100
+            if pct_move <= -abs(stop_loss_pct):
+                self._sell(date, t, prices_on_date, action="STOP_LOSS_SELL")
+                stopped.append(t)
+        return stopped
+
     def snapshot(self):
-        return {"cash": self.cash, "holdings": dict(self.holdings)}
+        return {"cash": self.cash, "holdings": dict(self.holdings), "entry_price": dict(self.entry_price)}
