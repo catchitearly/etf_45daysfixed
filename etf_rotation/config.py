@@ -41,8 +41,8 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 75                     # RS smoothing / momentum window (trading days)
-TOP_N = int(os.environ.get("TOP_N", 5))  # number of ETFs to hold, overridable via env var
+LOOKBACK_DAYS = 90                     # RS smoothing / momentum window (trading days)
+TOP_N = int(os.environ.get("TOP_N", 3))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
 INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH segment (see backtest.py)
@@ -104,7 +104,7 @@ ROBUSTNESS_JSON = os.path.join(DATA_DIR, "robustness.json")
 # Any sweep run whose max drawdown breaches this gets its full trade log and
 # worst round-trip trades auto-dumped to disk for manual inspection -- see
 # etf_rotation/robustness.py: dump_catastrophic_run().
-CATASTROPHIC_DD_THRESHOLD_PCT = -80.0
+CATASTROPHIC_DD_THRESHOLD_PCT = -40.0
 CATASTROPHIC_RUNS_DIR = os.path.join(DATA_DIR, "catastrophic_runs")
 DATA_QUALITY_FLAGS_CSV = os.path.join(DATA_DIR, "data_quality_flags.csv")
 
