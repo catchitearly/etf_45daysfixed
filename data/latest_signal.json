@@ -1,37 +1,96 @@
 {
-  "scan_date": "2026-07-27",
-  "top_n": 3,
-  "ranking": [
-    {
-      "ticker": "ITBEES.NS",
-      "rs": 4.548,
-      "name": "ITBees"
+  "scan_date": "2026-07-29",
+  "top_n": 4,
+  "rebalance_mode": "diff",
+  "note": "Executes at next Monday's close (or next trading day if Monday is a holiday).",
+  "methods": {
+    "mansfield": {
+      "method": "mansfield",
+      "segment_start_used_for_current_holdings": "2026-01-01",
+      "ranking": [
+        {
+          "ticker": "MON100.NS",
+          "rs": 11.043,
+          "name": "Nasdaq100"
+        },
+        {
+          "ticker": "MOM100.NS",
+          "rs": 7.824,
+          "name": "Momentum100"
+        },
+        {
+          "ticker": "CONSUMBEES.NS",
+          "rs": 7.662,
+          "name": "ConsumeBees"
+        },
+        {
+          "ticker": "MAFANG.NS",
+          "rs": 6.036,
+          "name": "FANGPlus"
+        }
+      ],
+      "current_holdings": [
+        "AUTOBEES.NS",
+        "MAFANG.NS",
+        "MON100.NS",
+        "PHARMABEES.NS"
+      ],
+      "planned_sell": [
+        "AUTOBEES.NS",
+        "PHARMABEES.NS"
+      ],
+      "planned_buy": [
+        "MOM100.NS",
+        "CONSUMBEES.NS"
+      ],
+      "planned_hold": [
+        "MAFANG.NS",
+        "MON100.NS"
+      ]
     },
-    {
-      "ticker": "AUTOBEES.NS",
-      "rs": 4.211,
-      "name": "AutoBees"
-    },
-    {
-      "ticker": "JUNIORBEES.NS",
-      "rs": 1.812,
-      "name": "JuniorBees"
+    "momentum": {
+      "method": "momentum",
+      "segment_start_used_for_current_holdings": "2026-01-01",
+      "ranking": [
+        {
+          "ticker": "MON100.NS",
+          "rs": 0.218,
+          "name": "Nasdaq100"
+        },
+        {
+          "ticker": "MAFANG.NS",
+          "rs": 0.195,
+          "name": "FANGPlus"
+        },
+        {
+          "ticker": "MOM100.NS",
+          "rs": 0.068,
+          "name": "Momentum100"
+        },
+        {
+          "ticker": "CONSUMBEES.NS",
+          "rs": 0.048,
+          "name": "ConsumeBees"
+        }
+      ],
+      "current_holdings": [
+        "JUNIORBEES.NS",
+        "MAFANG.NS",
+        "MON100.NS",
+        "PHARMABEES.NS"
+      ],
+      "planned_sell": [
+        "JUNIORBEES.NS",
+        "PHARMABEES.NS"
+      ],
+      "planned_buy": [
+        "MOM100.NS",
+        "CONSUMBEES.NS"
+      ],
+      "planned_hold": [
+        "MAFANG.NS",
+        "MON100.NS"
+      ]
     }
-  ],
-  "current_holdings": [
-    "AUTOBEES.NS",
-    "ITBEES.NS",
-    "MAFANG.NS"
-  ],
-  "planned_sell": [
-    "MAFANG.NS"
-  ],
-  "planned_buy": [
-    "JUNIORBEES.NS"
-  ],
-  "planned_hold": [
-    "AUTOBEES.NS",
-    "ITBEES.NS"
-  ],
-  "note": "Executes at next Monday's close (or next trading day if Monday is a holiday)."
+  }
 }
