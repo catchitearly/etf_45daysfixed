@@ -42,7 +42,7 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # Strategy parameters
 # ---------------------------------------------------------------------------
 LOOKBACK_DAYS = 190                     # RS smoothing / momentum window (trading days)
-TOP_N = int(os.environ.get("TOP_N", 4))  # number of ETFs to hold, overridable via env var
+TOP_N = int(os.environ.get("TOP_N", 3))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
 INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH segment (see backtest.py)
