@@ -67,7 +67,7 @@ REBALANCE_MODE ="diff"       # "full_liquidate": sell ALL holdings + equal-weigh
 # the capital to cash until the next scheduled weekly rebalance redeploys it.
 # Exists to shorten reaction time from "up to 6 days" (waiting for next
 # Monday) to "same day" during a fast crash.
-STOP_LOSS_ENABLED = os.environ.get("STOP_LOSS_ENABLED", "false").lower() in ("1", "true", "yes")
+STOP_LOSS_ENABLED = os.environ.get("STOP_LOSS_ENABLED", "true").lower() in ("1", "true", "yes")
 STOP_LOSS_PCT = float(os.environ.get("STOP_LOSS_PCT", 10.0))  # force-exit if down >X% from entry
 
 # Parabolic/overextended filter: excludes a ticker from the top-N selection
@@ -76,7 +76,7 @@ STOP_LOSS_PCT = float(os.environ.get("STOP_LOSS_PCT", 10.0))  # force-exit if do
 # unusually stretched relative to its own history, even if it currently
 # ranks #1" -- a known momentum-crash precursor. When a ticker is excluded
 # this way, the next best-ranked ELIGIBLE ticker takes its slot instead.
-PARABOLIC_FILTER_ENABLED = os.environ.get("PARABOLIC_FILTER_ENABLED", "false").lower() in ("1", "true", "yes")
+PARABOLIC_FILTER_ENABLED = os.environ.get("PARABOLIC_FILTER_ENABLED", "true").lower() in ("1", "true", "yes")
 PARABOLIC_ZSCORE_THRESHOLD = float(os.environ.get("PARABOLIC_ZSCORE_THRESHOLD", 2.5))
 PARABOLIC_ZSCORE_WINDOW = int(os.environ.get("PARABOLIC_ZSCORE_WINDOW", 252))  # ~1 trading year
 
