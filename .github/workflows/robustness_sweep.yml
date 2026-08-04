@@ -30,7 +30,7 @@ jobs:
           DATA_SOURCE: ${{ vars.DATA_SOURCE || 'yfinance' }}
           FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
           FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
-          STOP_LOSS_ENABLED: ${{ vars.STOP_LOSS_ENABLED || 'false' }}
+          STOP_LOSS_ENABLED: ${{ vars.STOP_LOSS_ENABLED || 'true' }}
           STOP_LOSS_PCT: ${{ vars.STOP_LOSS_PCT || '10.0' }}
           PARABOLIC_FILTER_ENABLED: ${{ vars.PARABOLIC_FILTER_ENABLED || 'false' }}
           PARABOLIC_ZSCORE_THRESHOLD: ${{ vars.PARABOLIC_ZSCORE_THRESHOLD || '2.5' }}
@@ -48,7 +48,7 @@ jobs:
           DATA_SOURCE: ${{ vars.DATA_SOURCE || 'yfinance' }}
           FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
           FYERS_ACCESS_TOKEN: ${{ secrets.FYERS_ACCESS_TOKEN }}
-          STOP_LOSS_ENABLED: ${{ vars.STOP_LOSS_ENABLED || 'false' }}
+          STOP_LOSS_ENABLED: ${{ vars.STOP_LOSS_ENABLED || 'true' }}
           STOP_LOSS_PCT: ${{ vars.STOP_LOSS_PCT || '10.0' }}
           PARABOLIC_FILTER_ENABLED: ${{ vars.PARABOLIC_FILTER_ENABLED || 'false' }}
           PARABOLIC_ZSCORE_THRESHOLD: ${{ vars.PARABOLIC_ZSCORE_THRESHOLD || '2.5' }}
