@@ -41,15 +41,15 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 45                     # RS smoothing / momentum window (trading days)
-TOP_N = int(os.environ.get("TOP_N", 3))  # number of ETFs to hold, overridable via env var
+LOOKBACK_DAYS = 190                     # RS smoothing / momentum window (trading days)
+TOP_N = int(os.environ.get("TOP_N", 4))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
 INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH segment (see backtest.py)
 TXN_COST_BPS = 0.0005                  # 0.05% per executed trade (buy or sell), covers brokerage+STT+slippage
 
 LOOKBACK_SWEEP_MIN = int(os.environ.get("LOOKBACK_SWEEP_MIN", 15))
-LOOKBACK_SWEEP_MAX = int(os.environ.get("LOOKBACK_SWEEP_MAX", 90))
+LOOKBACK_SWEEP_MAX = int(os.environ.get("LOOKBACK_SWEEP_MAX", 401))
 LOOKBACK_SWEEP_STEP = int(os.environ.get("LOOKBACK_SWEEP_STEP", 5))
 LOOKBACK_SWEEP = list(range(LOOKBACK_SWEEP_MIN, LOOKBACK_SWEEP_MAX + 1, LOOKBACK_SWEEP_STEP))
 
@@ -68,7 +68,7 @@ WALK_FORWARD_DD_PENALTY_WEIGHT = float(os.environ.get("WALK_FORWARD_DD_PENALTY_W
 # crash-quarter (2026 YTD) drawdown across several candidates in one table
 # instead of inferring it across separate sweep runs.
 WALK_FORWARD_REPORT_LOOKBACKS = [int(x) for x in os.environ.get(
-    "WALK_FORWARD_REPORT_LOOKBACKS", "50,75,100,120,140,160,180,200"
+    "WALK_FORWARD_REPORT_LOOKBACKS", "50,75,100,120,140,160,180,200,220,240,260,300,320,340,360"
 ).split(",")]
 
 RS_METHODS = ["mansfield", "momentum"]   # signal styles compared side-by-side on the dashboard
@@ -88,7 +88,7 @@ REBALANCE_MODE = "full_liquidate"        # "full_liquidate": sell ALL holdings +
 # the capital to cash until the next scheduled weekly rebalance redeploys it.
 # Exists to shorten reaction time from "up to 6 days" (waiting for next
 # Monday) to "same day" during a fast crash.
-STOP_LOSS_ENABLED = os.environ.get("STOP_LOSS_ENABLED", "false").lower() in ("1", "true", "yes")
+STOP_LOSS_ENABLED = os.environ.get("STOP_LOSS_ENABLED", "true").lower() in ("1", "true", "yes")
 STOP_LOSS_PCT = float(os.environ.get("STOP_LOSS_PCT", 10.0))  # force-exit if down >X% from entry
 
 # Parabolic/overextended filter: excludes a ticker from the top-N selection
