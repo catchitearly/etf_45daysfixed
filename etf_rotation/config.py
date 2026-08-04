@@ -48,7 +48,7 @@ MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before
 INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH segment (see backtest.py)
 TXN_COST_BPS = 0.0005                  # 0.05% per executed trade (buy or sell), covers brokerage+STT+slippage
 
-LOOKBACK_SWEEP = list(range(15, 301, 5))  # 15, 20, 25, ..., 90 -- for parameter-stability testing
+LOOKBACK_SWEEP = list(range(15, 501, 5))  # 15, 20, 25, ..., 90 -- for parameter-stability testing
 
 RS_METHODS = ["mansfield", "momentum"]   # signal styles compared side-by-side on the dashboard
 REBALANCE_MODE ="diff"       # "full_liquidate": sell ALL holdings + equal-weight rebuy top_n
