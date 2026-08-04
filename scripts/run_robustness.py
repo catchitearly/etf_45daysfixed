@@ -38,7 +38,24 @@ def main():
     ap.add_argument("--no-parabolic-filter", dest="parabolic_filter", action="store_false")
     ap.add_argument("--parabolic-zscore", type=float, default=None)
     ap.add_argument("--parabolic-window", type=int, default=None)
+    ap.add_argument("--wf-selection-metric", default=None, choices=["sharpe", "calmar", "sharpe_dd_penalty"],
+                     help=f"how walk-forward locks a lookback from training data (default: {config.WALK_FORWARD_SELECTION_METRIC})")
+    ap.add_argument("--wf-dd-penalty-weight", type=float, default=None,
+                     help="only used by --wf-selection-metric sharpe_dd_penalty")
+    ap.add_argument("--wf-report-lookbacks", default=None,
+                     help="comma-separated lookbacks to report full train+test metrics for, e.g. 50,100,150,200 "
+                          f"(default: {','.join(str(x) for x in config.WALK_FORWARD_REPORT_LOOKBACKS)})")
+    ap.add_argument("--lookback-min", type=int, default=None, help=f"default: {config.LOOKBACK_SWEEP_MIN}")
+    ap.add_argument("--lookback-max", type=int, default=None, help=f"default: {config.LOOKBACK_SWEEP_MAX}")
+    ap.add_argument("--lookback-step", type=int, default=None, help=f"default: {config.LOOKBACK_SWEEP_STEP}")
     args = ap.parse_args()
+    wf_report_lookbacks = ([int(x) for x in args.wf_report_lookbacks.split(",")]
+                            if args.wf_report_lookbacks else None)
+    lookback_sweep = list(range(
+        args.lookback_min or config.LOOKBACK_SWEEP_MIN,
+        (args.lookback_max or config.LOOKBACK_SWEEP_MAX) + 1,
+        args.lookback_step or config.LOOKBACK_SWEEP_STEP,
+    ))
 
     print(f"[robustness] DATA_SOURCE = {config.DATA_SOURCE!r} "
           f"(set via env var / repo variable; defaults to 'yfinance' if unset)")
@@ -70,8 +87,9 @@ def main():
     print(f"[robustness]   full flag list ({len(all_flags_for_csv)} rows) dumped to {flags_csv_path}")
 
     # -- 1. Full-period lookback stability sweep --------------------------
-    print(f"[robustness] running lookback sweep {config.LOOKBACK_SWEEP[0]}-{config.LOOKBACK_SWEEP[-1]} "
-          f"step 5, both methods, full period {config.BACKTEST_START}..{end_date} ...")
+    print(f"[robustness] running lookback sweep {lookback_sweep[0]}-{lookback_sweep[-1]} "
+          f"step {lookback_sweep[1]-lookback_sweep[0] if len(lookback_sweep)>1 else '-'}, "
+          f"both methods, full period {config.BACKTEST_START}..{end_date} ...")
     print(f"[robustness] any run with max drawdown worse than {config.CATASTROPHIC_DD_THRESHOLD_PCT}% "
           f"will have its full trade log + worst trades auto-dumped to {config.CATASTROPHIC_RUNS_DIR}/")
     stop_loss_enabled = config.STOP_LOSS_ENABLED if args.stop_loss is None else args.stop_loss
@@ -79,7 +97,7 @@ def main():
     print(f"[robustness] stop_loss_enabled={stop_loss_enabled}, parabolic_filter_enabled={parabolic_enabled}")
 
     sweep_df, best_full_period, invariant_issues, catastrophic_runs = run_lookback_sweep(
-        prices, start=config.BACKTEST_START, end=end_date,
+        prices, lookbacks=lookback_sweep, start=config.BACKTEST_START, end=end_date,
         stop_loss_enabled=args.stop_loss, stop_loss_pct=args.stop_loss_pct,
         parabolic_filter_enabled=args.parabolic_filter, parabolic_zscore_threshold=args.parabolic_zscore,
         parabolic_zscore_window=args.parabolic_window,
@@ -91,7 +109,7 @@ def main():
         for iss in invariant_issues:
             print(f"[robustness]     {iss}")
     else:
-        print("[robustness]   portfolio invariants clean across all 32 sweep runs")
+        print("[robustness]   portfolio invariants clean across all sweep runs")
 
     if catastrophic_runs:
         print(f"[robustness]   WARNING: {len(catastrophic_runs)} run(s) breached the "
@@ -105,7 +123,14 @@ def main():
 
     # -- 2. Walk-forward validation (train 2018-2022, test unseen) --------
     print("[robustness] running walk-forward validation (train 2018-2022, lock, test 2023-24/2025/2026) ...")
-    wf = walk_forward_validate(prices, train_start="2018-01-01", train_end="2022-12-31")
+    wf_selection_metric = args.wf_selection_metric or config.WALK_FORWARD_SELECTION_METRIC
+    print(f"[robustness] walk-forward selection metric: {wf_selection_metric} "
+          f"(candidates reported: {wf_report_lookbacks or config.WALK_FORWARD_REPORT_LOOKBACKS})")
+    wf = walk_forward_validate(
+        prices, lookbacks=lookback_sweep, train_start="2018-01-01", train_end="2022-12-31",
+        selection_metric=args.wf_selection_metric, dd_penalty_weight=args.wf_dd_penalty_weight,
+        report_lookbacks=wf_report_lookbacks,
+    )
     for method, r in wf.items():
         print(f"[robustness]   {method}: locked lookback = {r['locked_lookback']} "
               f"(train Sharpe {r['train_sharpe']})")
@@ -137,7 +162,8 @@ def main():
     payload = {
         "generated_at": end_date,
         "data_source": config.DATA_SOURCE,
-        "lookback_sweep_range": [config.LOOKBACK_SWEEP[0], config.LOOKBACK_SWEEP[-1], 5],
+        "lookback_sweep_range": [lookback_sweep[0], lookback_sweep[-1],
+                                  (lookback_sweep[1] - lookback_sweep[0]) if len(lookback_sweep) > 1 else 0],
         "top_n": config.TOP_N,
         "rebalance_mode": config.REBALANCE_MODE,
         "catastrophic_dd_threshold_pct": config.CATASTROPHIC_DD_THRESHOLD_PCT,
@@ -158,10 +184,13 @@ def main():
         "walk_forward": {
             method: {
                 "train_window": r["train_window"],
+                "selection_metric": r["selection_metric"],
                 "locked_lookback": r["locked_lookback"],
+                "locked_score": r["locked_score"],
                 "train_sharpe": r["train_sharpe"],
                 "train_sweep": r["train_sweep"],
                 "test_results": r["test_results"],
+                "candidates_report": r["candidates_report"],
             } for method, r in wf.items()
         },
         "regime_split": regimes,

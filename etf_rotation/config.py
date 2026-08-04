@@ -41,17 +41,38 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 190                     # RS smoothing / momentum window (trading days)
-TOP_N = int(os.environ.get("TOP_N", 5))  # number of ETFs to hold, overridable via env var
+LOOKBACK_DAYS = 45                     # RS smoothing / momentum window (trading days)
+TOP_N = int(os.environ.get("TOP_N", 3))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
 INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH segment (see backtest.py)
 TXN_COST_BPS = 0.0005                  # 0.05% per executed trade (buy or sell), covers brokerage+STT+slippage
 
-LOOKBACK_SWEEP = list(range(15, 501, 5))  # 15, 20, 25, ..., 90 -- for parameter-stability testing
+LOOKBACK_SWEEP_MIN = int(os.environ.get("LOOKBACK_SWEEP_MIN", 15))
+LOOKBACK_SWEEP_MAX = int(os.environ.get("LOOKBACK_SWEEP_MAX", 90))
+LOOKBACK_SWEEP_STEP = int(os.environ.get("LOOKBACK_SWEEP_STEP", 5))
+LOOKBACK_SWEEP = list(range(LOOKBACK_SWEEP_MIN, LOOKBACK_SWEEP_MAX + 1, LOOKBACK_SWEEP_STEP))
+
+# Walk-forward LOCKING criterion: raw Sharpe on the training window can pick
+# a lookback that looks smooth in calm 2018-2022 data but reacts too slowly
+# to a real shock (observed: it kept drifting toward the sweep's boundary
+# and got materially worse 2026-YTD drawdown than a mid-range lookback).
+# "calmar" (CAGR / |max drawdown|, both computed on the SAME training
+# window) is drawdown-aware by construction, so it stops rewarding a
+# lookback purely for a good return with no regard for how it got there.
+WALK_FORWARD_SELECTION_METRIC = os.environ.get("WALK_FORWARD_SELECTION_METRIC", "calmar")  # "sharpe" | "calmar" | "sharpe_dd_penalty"
+WALK_FORWARD_DD_PENALTY_WEIGHT = float(os.environ.get("WALK_FORWARD_DD_PENALTY_WEIGHT", 1.0))  # only used by "sharpe_dd_penalty"
+
+# Which lookbacks to report FULL train+test-segment metrics for side-by-side
+# (in addition to whichever one gets locked) -- lets you directly compare
+# crash-quarter (2026 YTD) drawdown across several candidates in one table
+# instead of inferring it across separate sweep runs.
+WALK_FORWARD_REPORT_LOOKBACKS = [int(x) for x in os.environ.get(
+    "WALK_FORWARD_REPORT_LOOKBACKS", "50,75,100,120,140,160,180,200"
+).split(",")]
 
 RS_METHODS = ["mansfield", "momentum"]   # signal styles compared side-by-side on the dashboard
-REBALANCE_MODE ="diff"       # "full_liquidate": sell ALL holdings + equal-weight rebuy top_n
+REBALANCE_MODE = "full_liquidate"        # "full_liquidate": sell ALL holdings + equal-weight rebuy top_n
                                           # whenever the top_n SET changes (even continuing names churn).
                                           # "diff": only trade the diffs (kept as an option in portfolio.py).
 
@@ -67,7 +88,7 @@ REBALANCE_MODE ="diff"       # "full_liquidate": sell ALL holdings + equal-weigh
 # the capital to cash until the next scheduled weekly rebalance redeploys it.
 # Exists to shorten reaction time from "up to 6 days" (waiting for next
 # Monday) to "same day" during a fast crash.
-STOP_LOSS_ENABLED = os.environ.get("STOP_LOSS_ENABLED", "true").lower() in ("1", "true", "yes")
+STOP_LOSS_ENABLED = os.environ.get("STOP_LOSS_ENABLED", "false").lower() in ("1", "true", "yes")
 STOP_LOSS_PCT = float(os.environ.get("STOP_LOSS_PCT", 10.0))  # force-exit if down >X% from entry
 
 # Parabolic/overextended filter: excludes a ticker from the top-N selection

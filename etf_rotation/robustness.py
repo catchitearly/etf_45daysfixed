@@ -163,18 +163,56 @@ def dump_catastrophic_run(method: str, lookback: int, result: dict, metrics: dic
 # ---------------------------------------------------------------------------
 # 2. Walk-forward validation
 # ---------------------------------------------------------------------------
+def _selection_score(metrics: dict, selection_metric: str = "calmar",
+                      dd_penalty_weight: float = config.WALK_FORWARD_DD_PENALTY_WEIGHT):
+    """
+    Turns a metrics dict into a single comparable score for locking a
+    lookback during walk-forward training. "sharpe" alone can reward a
+    lookback that looks smooth in a calm training window but has no
+    mechanism to penalize how it behaves when things break -- "calmar" and
+    "sharpe_dd_penalty" are drawdown-aware alternatives.
+    """
+    if selection_metric == "sharpe":
+        v = metrics.get("sharpe")
+        return v if v is not None else -999
+    elif selection_metric == "calmar":
+        v = metrics.get("calmar")
+        return v if v is not None else -999
+    elif selection_metric == "sharpe_dd_penalty":
+        sharpe = metrics.get("sharpe")
+        sharpe = sharpe if sharpe is not None else -999
+        max_dd = metrics.get("max_drawdown_pct")
+        dd_penalty = (abs(max_dd) / 100.0 * dd_penalty_weight) if max_dd is not None else 1.0
+        return sharpe - dd_penalty
+    else:
+        raise ValueError(f"Unknown selection_metric: {selection_metric!r} "
+                          f"(expected 'sharpe', 'calmar', or 'sharpe_dd_penalty')")
+
+
 def walk_forward_validate(prices, methods=None, lookbacks=None, top_n=config.TOP_N,
                            rebalance_mode=None, train_start="2018-01-01", train_end="2022-12-31",
-                           test_segments=None, initial_capital=config.INITIAL_CAPITAL):
+                           test_segments=None, initial_capital=config.INITIAL_CAPITAL,
+                           selection_metric=None, dd_penalty_weight=None, report_lookbacks=None):
     """
     For each method: sweep lookbacks on [train_start, train_end] ONLY, lock
-    the best-Sharpe lookback, then run that exact config (no re-tuning) on
-    each of `test_segments` = [(label, start, end), ...] as independent
-    ₹10L simulations.
+    the best lookback by `selection_metric` (default: config's, "calmar" --
+    drawdown-aware, see _selection_score), then run that exact config (no
+    re-tuning) on each of `test_segments` = [(label, start, end), ...] as
+    independent ₹10L simulations.
+
+    ALSO reports the same train+test metrics for every lookback in
+    `report_lookbacks` (default: config.WALK_FORWARD_REPORT_LOOKBACKS) --
+    not just the one that got locked -- as `candidates_report`, so you can
+    directly compare e.g. 2026-YTD (crash-quarter) drawdown across several
+    candidate lookbacks side by side rather than inferring it from separate
+    runs.
     """
     methods = methods or config.RS_METHODS
     lookbacks = lookbacks or config.LOOKBACK_SWEEP
     rebalance_mode = rebalance_mode or config.REBALANCE_MODE
+    selection_metric = selection_metric or config.WALK_FORWARD_SELECTION_METRIC
+    dd_penalty_weight = config.WALK_FORWARD_DD_PENALTY_WEIGHT if dd_penalty_weight is None else dd_penalty_weight
+    report_lookbacks = report_lookbacks if report_lookbacks is not None else config.WALK_FORWARD_REPORT_LOOKBACKS
     if test_segments is None:
         test_segments = [
             ("2023_2024", "2023-01-01", "2024-12-31"),
@@ -185,7 +223,8 @@ def walk_forward_validate(prices, methods=None, lookbacks=None, top_n=config.TOP
     out = {}
     for method in methods:
         train_rows = []
-        best_lb, best_sharpe = None, -999
+        train_metrics_by_lb = {}
+        best_lb, best_score = None, -999
         for lb in lookbacks:
             result = run_backtest(
                 prices, start=train_start, end=train_end, top_n=top_n, lookback=lb,
@@ -193,25 +232,54 @@ def walk_forward_validate(prices, methods=None, lookbacks=None, top_n=config.TOP
             )
             metrics = compute_metrics(result["equity_curve"], result["trade_log"])
             train_rows.append({"lookback": lb, **metrics})
-            sharpe = metrics.get("sharpe")
-            sharpe_val = sharpe if sharpe is not None else -999
-            if sharpe_val > best_sharpe:
-                best_sharpe, best_lb = sharpe_val, lb
+            train_metrics_by_lb[lb] = metrics
 
-        test_results = {}
-        for label, seg_start, seg_end in test_segments:
-            result = run_backtest(
-                prices, start=seg_start, end=seg_end, top_n=top_n, lookback=best_lb,
-                rs_method=method, rebalance_mode=rebalance_mode, initial_capital=initial_capital,
-            )
-            test_results[label] = compute_metrics(result["equity_curve"], result["trade_log"])
+            score = _selection_score(metrics, selection_metric, dd_penalty_weight)
+            if score > best_score:
+                best_score, best_lb = score, lb
+
+        def _run_test_segments(lb):
+            results = {}
+            for label, seg_start, seg_end in test_segments:
+                result = run_backtest(
+                    prices, start=seg_start, end=seg_end, top_n=top_n, lookback=lb,
+                    rs_method=method, rebalance_mode=rebalance_mode, initial_capital=initial_capital,
+                )
+                results[label] = compute_metrics(result["equity_curve"], result["trade_log"])
+            return results
+
+        test_results = _run_test_segments(best_lb)
+
+        # -- candidates report: full train+test metrics for a curated set of
+        #    lookbacks (plus whichever one got locked), so you can compare
+        #    crash-quarter behavior across candidates directly --
+        candidate_lbs = sorted(set(report_lookbacks + [best_lb]))
+        candidates_report = []
+        for lb in candidate_lbs:
+            if lb in train_metrics_by_lb:
+                tm = train_metrics_by_lb[lb]
+            else:
+                tr = run_backtest(
+                    prices, start=train_start, end=train_end, top_n=top_n, lookback=lb,
+                    rs_method=method, rebalance_mode=rebalance_mode, initial_capital=initial_capital,
+                )
+                tm = compute_metrics(tr["equity_curve"], tr["trade_log"])
+            candidates_report.append({
+                "lookback": lb,
+                "is_locked": lb == best_lb,
+                "train_metrics": tm,
+                "test_results": test_results if lb == best_lb else _run_test_segments(lb),
+            })
 
         out[method] = {
             "train_window": [train_start, train_end],
+            "selection_metric": selection_metric,
             "locked_lookback": best_lb,
-            "train_sharpe": round(best_sharpe, 3) if best_sharpe != -999 else None,
+            "locked_score": round(best_score, 4) if best_score != -999 else None,
+            "train_sharpe": round(train_metrics_by_lb[best_lb].get("sharpe") or -999, 3),  # kept for backward compat
             "train_sweep": train_rows,
             "test_results": test_results,
+            "candidates_report": candidates_report,
         }
     return out
 

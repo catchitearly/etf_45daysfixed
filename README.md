@@ -75,12 +75,34 @@ strategy so a good backtest number can't hide overfitting or luck:
 
 | Check | What it does | Where |
 |---|---|---|
-| **Lookback stability sweep** | Runs lookback = 15, 20, 25, ..., 90 (step 5) for both RS methods over the full period. A real edge is a smooth hill in Sharpe/CAGR vs. lookback; a spike at one value with noise around it is curve-fitting. | Dashboard → *Robustness* tab, section A |
-| **Walk-forward validation** | Picks the best-Sharpe lookback using ONLY 2018–2022 (train), locks it, then tests that exact config — no re-tuning — on 2023–2024, 2025, and 2026 YTD. | Section B |
+| **Lookback stability sweep** | Runs lookback = `LOOKBACK_SWEEP_MIN`..`LOOKBACK_SWEEP_MAX` step `LOOKBACK_SWEEP_STEP` (default 15–90 step 5, fully configurable — see below) for both RS methods over the full period. A real edge is a smooth hill in Sharpe/CAGR vs. lookback; a spike at one value with noise around it is curve-fitting. | Dashboard → *Robustness* tab, section A |
+| **Walk-forward validation** | Locks a lookback using ONLY 2018–2022 (train) data via a **drawdown-aware selection metric** (default: Calmar — CAGR / \|max drawdown\|; also supports raw Sharpe or a Sharpe-minus-DD-penalty — see below), then tests that exact config — no re-tuning — on 2023–2024, 2025, and 2026 YTD. Also reports full train+test metrics for a curated set of **candidate lookbacks side by side** (`WALK_FORWARD_REPORT_LOOKBACKS`), not just the one that got locked, so you can directly compare e.g. crash-quarter drawdown across several candidates in one table. | Section B |
 | **Regime-split testing** | The locked config run separately across 2018 (choppy), 2019 (sideways), 2020–2021 (COVID crash + bull), 2022 (bear/choppy), 2023–2024 (bull), so a trend-only strategy can't hide behind a good blended average. | Section C |
-| **Bootstrap resampling** | Extracts genuine round-trip trades (BUY paired with its subsequent SELL — exact, since a ticker never has overlapping lots under `full_liquidate`), resamples them with replacement 1000x, and reports the *distribution* of return/Sharpe — not just the point estimate. If the 5th percentile is near/below zero, the edge may not be statistically robust. | Section D |
+| **Bootstrap resampling** | Extracts genuine round-trip trades (BUY paired with its subsequent SELL — exact, since a ticker never has overlapping lots under `full_liquidate`/`diff`), resamples them with replacement 1000x, and reports the *distribution* of return/Sharpe — not just the point estimate. If the 5th percentile is near/below zero, the edge may not be statistically robust. | Section D |
 | **Trade-order shuffle test** | Same trades, reordered randomly 500x, equity curve rebuilt each time. Total return is necessarily identical (same multiset of returns), but Max Drawdown/Calmar are path-dependent — wide spread means the headline drawdown number owes a lot to sequencing luck. | Section E |
-| **Data-quality / bad-tick check** | Flags any single-day price move >20% (ETFs essentially never move this much normally — could be a stale/bad print or an unadjusted corporate action) and independently re-verifies the portfolio's equity never went negative or NaN. | Section F |
+| **Data-quality / bad-tick check** | Flags single-day price moves >20% AND gradual multi-day cumulative drift over 3/5/10-day windows >25% (catches a bad tick that built up over several smaller moves instead of one dramatic jump), and independently re-verifies the portfolio's equity never went negative or NaN **across every sweep run**, not just the best one. | Section F |
+| **Catastrophic-run auto-dump** | Any sweep run whose max drawdown breaches `CATASTROPHIC_DD_THRESHOLD_PCT` (default -80%) immediately has its full trade log and worst round-trip trades dumped to `data/catastrophic_runs/`, with the worst trades shown inline on the dashboard — nothing anomalous can hide just because it wasn't the "best" run kept for other steps. | Section G |
+
+**Configuring the sweep range and walk-forward selection** (env vars / GitHub
+repo variables, same pattern as `DATA_SOURCE`):
+```bash
+LOOKBACK_SWEEP_MIN=15 LOOKBACK_SWEEP_MAX=200 LOOKBACK_SWEEP_STEP=5 \
+WALK_FORWARD_SELECTION_METRIC=calmar \
+WALK_FORWARD_REPORT_LOOKBACKS=50,75,100,120,140,160,180,200 \
+python scripts/run_robustness.py
+```
+Or via CLI flags: `--lookback-min --lookback-max --lookback-step
+--wf-selection-metric {sharpe,calmar,sharpe_dd_penalty}
+--wf-dd-penalty-weight --wf-report-lookbacks`.
+
+**Why Calmar, not Sharpe, is the walk-forward default:** raw Sharpe on a
+calm training window can lock a lookback that looks smooth in 2018–2022 but
+has no mechanism to penalize how badly it reacts when things actually
+break — we observed this directly: Sharpe-based locking drifted toward the
+edge of the tested range and produced a visibly worse crash-quarter
+drawdown than a mid-range lookback, despite a higher blended Sharpe.
+Calmar (return per unit of max drawdown, computed on the same training
+window) is drawdown-aware by construction.
 
 Run it:
 ```bash
@@ -89,8 +111,8 @@ python scripts/run.py                # rebuild dashboard so it picks up the new 
 ```
 Or trigger the **Robustness Sweep** GitHub Actions workflow manually (or let
 it run on its monthly schedule) — see `.github/workflows/robustness_sweep.yml`.
-It's kept separate from the Monday refresh because it's ~16x more
-compute (16 lookbacks × 2 methods, twice over, plus resampling).
+It's kept separate from the Monday refresh because it's much more compute
+(dozens of lookbacks × 2 methods, several times over, plus resampling).
 
 **Defensive checks always on** (not just in the sweep): `Portfolio` asserts
 cash and market value can never go negative for this unlevered, long-only,

@@ -557,18 +557,43 @@ function renderRobustness(){
 
   // ---- B. Walk-forward validation ----
   html += `<div class="panel"><h3>Walk-Forward Validation</h3>
-    <div class="note">Best lookback chosen using ONLY 2018\u20132022 (train). That exact, unchanged config is then
-    tested \u2014 without re-tuning \u2014 on 2023\u20132024, 2025, and 2026 YTD.</div>`;
+    <div class="note">Lookback locked using ONLY 2018\u20132022 (train) data, then tested \u2014 without
+    re-tuning \u2014 on 2023\u20132024, 2025, and 2026 YTD. Selection metric is drawdown-aware by default
+    (Calmar, not raw Sharpe) so a lookback isn't rewarded purely for a good return with no regard for how
+    bumpy the ride was.</div>`;
   methods.forEach(method=>{
     const wf = R.walk_forward[method];
     const meta = METHOD_META[method];
     html += `<div class="method-head" style="margin-top:10px;"><span class="dot" style="background:${meta.color}"></span>${meta.name}
-      \u2014 locked lookback: <b style="color:${meta.color}">${wf.locked_lookback}d</b> (train Sharpe ${wf.train_sharpe ?? '\u2014'}, window ${wf.train_window[0]} to ${wf.train_window[1]})</div>
+      \u2014 locked lookback: <b style="color:${meta.color}">${wf.locked_lookback}d</b>
+      (selection metric: <b>${wf.selection_metric}</b>, score ${wf.locked_score ?? '\u2014'}, train Sharpe ${wf.train_sharpe ?? '\u2014'},
+      window ${wf.train_window[0]} to ${wf.train_window[1]})</div>
     <table><tr><th>Test Period</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th><th>Calmar</th><th>Trades</th></tr>`;
     for (const [label, m] of Object.entries(wf.test_results)){
       html += `<tr><td>${label}</td><td>${fmtPct(m.cagr_pct)}</td><td>${fmtPct(m.max_drawdown_pct)}</td><td>${m.sharpe ?? '\u2014'}</td><td>${m.calmar ?? '\u2014'}</td><td>${fmtNum(m.num_trades)}</td></tr>`;
     }
     html += `</table>`;
+
+    if (wf.candidates_report && wf.candidates_report.length > 0){
+      html += `<div class="note" style="margin-top:10px;">Candidate lookback comparison \u2014 full train + test-segment
+        metrics side by side, so crash-quarter (2026 YTD) behavior can be compared directly instead of inferred across
+        separate runs. The locked lookback (\u2605) is one row here, not a special case.</div>
+      <table><tr><th>Lookback</th><th>Train Sharpe</th><th>Train Calmar</th>
+        <th>2023-24 CAGR</th><th>2023-24 DD</th><th>2025 CAGR</th><th>2025 DD</th>
+        <th>2026 YTD CAGR</th><th>2026 YTD DD</th><th>2026 YTD Calmar</th></tr>`;
+      wf.candidates_report.forEach(c=>{
+        const t23 = c.test_results['2023_2024'] || {};
+        const t25 = c.test_results['2025'] || {};
+        const t26 = c.test_results['2026_ytd'] || {};
+        const star = c.is_locked ? ' \u2605' : '';
+        const rowStyle = c.is_locked ? `style="background:var(--panel2); font-weight:600;"` : '';
+        html += `<tr ${rowStyle}><td>${c.lookback}d${star}</td><td>${c.train_metrics.sharpe ?? '\u2014'}</td><td>${c.train_metrics.calmar ?? '\u2014'}</td>
+          <td>${fmtPct(t23.cagr_pct)}</td><td>${fmtPct(t23.max_drawdown_pct)}</td>
+          <td>${fmtPct(t25.cagr_pct)}</td><td>${fmtPct(t25.max_drawdown_pct)}</td>
+          <td>${fmtPct(t26.cagr_pct)}</td><td>${fmtPct(t26.max_drawdown_pct)}</td><td>${t26.calmar ?? '\u2014'}</td></tr>`;
+      });
+      html += `</table>`;
+    }
   });
   html += `</div>`;
 
