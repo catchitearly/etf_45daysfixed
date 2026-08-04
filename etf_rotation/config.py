@@ -41,7 +41,7 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 140                    # RS smoothing / momentum window (trading days)
+LOOKBACK_DAYS = 200                    # RS smoothing / momentum window (trading days)
 TOP_N = int(os.environ.get("TOP_N", 4))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
@@ -49,7 +49,7 @@ INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH seg
 TXN_COST_BPS = 0.0005                  # 0.05% per executed trade (buy or sell), covers brokerage+STT+slippage
 
 LOOKBACK_SWEEP_MIN = int(os.environ.get("LOOKBACK_SWEEP_MIN", 15))
-LOOKBACK_SWEEP_MAX = int(os.environ.get("LOOKBACK_SWEEP_MAX", 201))
+LOOKBACK_SWEEP_MAX = int(os.environ.get("LOOKBACK_SWEEP_MAX", 301))
 LOOKBACK_SWEEP_STEP = int(os.environ.get("LOOKBACK_SWEEP_STEP", 5))
 LOOKBACK_SWEEP = list(range(LOOKBACK_SWEEP_MIN, LOOKBACK_SWEEP_MAX + 1, LOOKBACK_SWEEP_STEP))
 
