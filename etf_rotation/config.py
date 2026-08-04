@@ -41,7 +41,7 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 195                    # RS smoothing / momentum window (trading days)
+LOOKBACK_DAYS = 140                    # RS smoothing / momentum window (trading days)
 TOP_N = int(os.environ.get("TOP_N", 4))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
@@ -49,7 +49,7 @@ INITIAL_CAPITAL = 1_000_000.0          # Rs 10,00,000 -- used fresh for EACH seg
 TXN_COST_BPS = 0.0005                  # 0.05% per executed trade (buy or sell), covers brokerage+STT+slippage
 
 LOOKBACK_SWEEP_MIN = int(os.environ.get("LOOKBACK_SWEEP_MIN", 15))
-LOOKBACK_SWEEP_MAX = int(os.environ.get("LOOKBACK_SWEEP_MAX", 401))
+LOOKBACK_SWEEP_MAX = int(os.environ.get("LOOKBACK_SWEEP_MAX", 201))
 LOOKBACK_SWEEP_STEP = int(os.environ.get("LOOKBACK_SWEEP_STEP", 5))
 LOOKBACK_SWEEP = list(range(LOOKBACK_SWEEP_MIN, LOOKBACK_SWEEP_MAX + 1, LOOKBACK_SWEEP_STEP))
 
@@ -68,7 +68,7 @@ WALK_FORWARD_DD_PENALTY_WEIGHT = float(os.environ.get("WALK_FORWARD_DD_PENALTY_W
 # crash-quarter (2026 YTD) drawdown across several candidates in one table
 # instead of inferring it across separate sweep runs.
 WALK_FORWARD_REPORT_LOOKBACKS = [int(x) for x in os.environ.get(
-    "WALK_FORWARD_REPORT_LOOKBACKS", "50,75,100,120,140,160,180,200,220,240,260,300,320,340,360"
+    "WALK_FORWARD_REPORT_LOOKBACKS", "50,75,100,120,140,160,180,200"
 ).split(",")]
 
 RS_METHODS = ["mansfield", "momentum"]   # signal styles compared side-by-side on the dashboard
@@ -104,7 +104,7 @@ PARABOLIC_ZSCORE_WINDOW = int(os.environ.get("PARABOLIC_ZSCORE_WINDOW", 252))  #
 # ---------------------------------------------------------------------------
 # Backtest / reporting date ranges
 # ---------------------------------------------------------------------------
-DATA_START = "2017-06-01"              # buffer so 45d RS is valid from day 1 of BACKTEST_START
+DATA_START = "2017-01-01"              # buffer so 45d RS is valid from day 1 of BACKTEST_START
 BACKTEST_START = "2018-01-01"
 
 # ---------------------------------------------------------------------------
