@@ -41,7 +41,7 @@ CODE_MAP = {t[0]: t[2] for t in ETFS}
 # ---------------------------------------------------------------------------
 # Strategy parameters
 # ---------------------------------------------------------------------------
-LOOKBACK_DAYS = 190                    # RS smoothing / momentum window (trading days)
+LOOKBACK_DAYS = 140                    # RS smoothing / momentum window (trading days)
 TOP_N = int(os.environ.get("TOP_N", 4))  # number of ETFs to hold, overridable via env var
 MIN_HISTORY_DAYS = LOOKBACK_DAYS + 20    # minimum price history required before an ETF is eligible for ranking
 
@@ -105,7 +105,7 @@ PARABOLIC_ZSCORE_WINDOW = int(os.environ.get("PARABOLIC_ZSCORE_WINDOW", 252))  #
 # Backtest / reporting date ranges
 # ---------------------------------------------------------------------------
 DATA_START = "2017-01-01"              # buffer so 45d RS is valid from day 1 of BACKTEST_START
-BACKTEST_START = "2018-01-01"
+BACKTEST_START = "2021-07-01"
 
 # ---------------------------------------------------------------------------
 # Data source
@@ -129,7 +129,7 @@ FYERS_REQUEST_DELAY_SEC = 0.35  # be polite to the rate limit across ~24 tickers
 # "NSE:<SYM>-EQ" pattern (verify against Fyers symbol master before relying
 # on this for any ticker not already confirmed working).
 FYERS_SYMBOL_OVERRIDES = {}
-SEGMENT_1 = ("2018-01-01", "2026-12-31")   # in-sample backtest
+SEGMENT_1 = ("2021-07-01", "2026-12-31")   # in-sample backtest
 SEGMENT_2 = ("2025-01-01", "2025-12-31")   # forward test (no parameter tuning done on this period)
 SEGMENT_3 = ("2026-01-01", None)           # forward test, None = up to latest available date
 
