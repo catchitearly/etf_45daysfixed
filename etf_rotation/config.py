@@ -129,7 +129,7 @@ FYERS_REQUEST_DELAY_SEC = 0.35  # be polite to the rate limit across ~24 tickers
 # "NSE:<SYM>-EQ" pattern (verify against Fyers symbol master before relying
 # on this for any ticker not already confirmed working).
 FYERS_SYMBOL_OVERRIDES = {}
-SEGMENT_1 = ("2018-01-01", "2024-12-31")   # in-sample backtest
+SEGMENT_1 = ("2018-01-01", "2026-12-31")   # in-sample backtest
 SEGMENT_2 = ("2025-01-01", "2025-12-31")   # forward test (no parameter tuning done on this period)
 SEGMENT_3 = ("2026-01-01", None)           # forward test, None = up to latest available date
 
