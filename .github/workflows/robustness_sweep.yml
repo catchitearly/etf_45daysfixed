@@ -39,7 +39,7 @@ jobs:
           WALK_FORWARD_DD_PENALTY_WEIGHT: ${{ vars.WALK_FORWARD_DD_PENALTY_WEIGHT || '1.0' }}
           WALK_FORWARD_REPORT_LOOKBACKS: ${{ vars.WALK_FORWARD_REPORT_LOOKBACKS || '50,75,100,120,140,160,180,200' }}
           LOOKBACK_SWEEP_MIN: ${{ vars.LOOKBACK_SWEEP_MIN || '15' }}
-          LOOKBACK_SWEEP_MAX: ${{ vars.LOOKBACK_SWEEP_MAX || '90' }}
+          LOOKBACK_SWEEP_MAX: ${{ vars.LOOKBACK_SWEEP_MAX || '401' }}
           LOOKBACK_SWEEP_STEP: ${{ vars.LOOKBACK_SWEEP_STEP || '5' }}
         run: python scripts/run_robustness.py
 
